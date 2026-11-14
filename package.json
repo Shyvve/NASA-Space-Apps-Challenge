@@ -11,12 +11,14 @@
     "validate": "node scripts/validate.mjs",
     "terrain": "node scripts/horizons-mask.mjs",
     "tiles": "node scripts/build-tiles.mjs",
-    "kit": "node scripts/build-kit.mjs"
+    "start": "vite build && vite preview --open",
+    "maps": "node scripts/build-maps.mjs"
   },
   "dependencies": {
     "astronomy-engine": "^2.1.19",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "react-dom": "^19.3.1",
+    "three": "^0.170.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.3.0",

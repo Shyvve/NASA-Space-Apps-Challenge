@@ -1,8 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { SITES } from '../data/sites.js'
 import { EARTH_RADIUS_DEG, SUN_RADIUS_DEG, clearances, formatDuration, metricsAt } from '../lib/scenario.js'
 import { useHorizon, useSeries } from '../lib/useSeries.js'
 import { quickAccuracy } from '../lib/quickTerrain.js'
+import { Explain, useWords } from '../lib/learn.jsx'
+import { downloadText } from '../lib/export.js'
 
 const DAY = 86400000
 const groups = [...new Set(SITES.map((s) => s.group))]
@@ -14,11 +16,11 @@ export const fmtUTC = (ms) =>
   }) + ' UTC'
 const toInput = (d) => d.toISOString().slice(0, 16)
 
-export function verdict(m) {
-  if (m.sunUp && m.earthUp) return { cls: 'go', text: 'Power + direct-to-Earth link' }
-  if (m.sunUp) return { cls: 'warn', text: 'Power only — no Earth in view' }
-  if (m.earthUp) return { cls: 'warn', text: 'Comms only — Sun below horizon' }
-  return { cls: 'nogo', text: 'No power, no direct comms' }
+export function verdict(m, w = (e) => e) {
+  if (m.sunUp && m.earthUp) return { cls: 'go', text: w('Power + direct-to-Earth link', 'All good: sunlight for power and Earth in view to talk home') }
+  if (m.sunUp) return { cls: 'warn', text: w('Power only — no Earth in view', 'Sunlight, but Earth is hidden: no radio contact') }
+  if (m.earthUp) return { cls: 'warn', text: w('Comms only — Sun below horizon', 'Earth in view, but it is night: running on batteries') }
+  return { cls: 'nogo', text: w('No power, no direct comms', 'Night and no Earth: no power and no contact') }
 }
 
 export function SitePicker({ siteId, lat, lon, onSite, onCoords, landing, onLanding, mask, onMask, terrain }) {
@@ -68,41 +70,54 @@ export function SitePicker({ siteId, lat, lon, onSite, onCoords, landing, onLand
 }
 
 export function MetricCards({ m, source }) {
-  const v = verdict(m)
+  const w = useWords()
+  const v = verdict(m, w)
   const sunFlip = formatDuration(m.sunFlipHours)
   const earthFlip = formatDuration(m.earthFlipHours)
+  const never = `> ${m.windowDays} d`
   return (
-    <div className="cards">
-      <div className={`card verdict ${v.cls}`}>
-        <div className="label">Status at this moment</div>
-        <div className="big">{v.text}</div>
-        <div className="sub">
-          Data: {source === 'horizons' ? 'JPL Horizons (DE441)' : 'computed in browser (IAU Moon model)'}
+    <div id="status-cards">
+      <div className="cards">
+        <div className={`card verdict ${v.cls}`}>
+          <div className="label">{w('Status at this moment', 'Right now at the landing site')}</div>
+          <div className="big">{v.text}</div>
+          <div className="sub">
+            Data: {source === 'horizons' ? 'JPL Horizons (DE441)' : 'computed in browser (IAU Moon model)'}
+          </div>
+        </div>
+        <div className="card">
+          <div className="label"><i className="dot-ico sun" /> {w('Solar elevation', 'How high the Sun is')}</div>
+          <div className="big mono">{fmtDeg(m.sunEl)}</div>
+          <div className="sub">
+            {w(`az ${m.sunAz.toFixed(1)}° · horizon there ${fmtDeg(m.sunHorizon, 1)} · disk ${Math.round(m.diskFraction * 100)}% visible`,
+              `Mountains in that direction reach ${fmtDeg(m.sunHorizon, 1)}. ${Math.round(m.diskFraction * 100)}% of the Sun is visible.`)}
+          </div>
+          <div className={`countdown ${m.sunUp ? 'up' : 'down'}`}>
+            {m.sunUp ? w('Sunset in ', 'Night starts in ') : w('Sunrise in ', 'Day starts in ')}<b>{sunFlip ?? never}</b>
+          </div>
+        </div>
+        <div className="card">
+          <div className="label"><i className="dot-ico earth" /> {w('Earth elevation', 'How high the Earth is')}</div>
+          <div className="big mono">{fmtDeg(m.earthEl)}</div>
+          <div className="sub">
+            {w(`az ${m.earthAz.toFixed(1)}° · horizon there ${fmtDeg(m.earthHorizon, 1)}`, `Mountains in that direction reach ${fmtDeg(m.earthHorizon, 1)}.`)}
+          </div>
+          <div className={`countdown ${m.earthUp ? 'up' : 'down'}`}>
+            {m.earthUp ? w('Earthset in ', 'Contact lost in ') : w('Earthrise in ', 'Contact back in ')}<b>{earthFlip ?? never}</b>
+          </div>
+        </div>
+        <div className="card">
+          <div className="label">{w(`Next ${m.windowDays} days`, `The next ${m.windowDays} days`)}</div>
+          <Bar label={w('Sunlight', 'Sunny')} pct={m.sunPct} cls="sun" />
+          <Bar label={w('Earth in view', 'Can talk')} pct={m.earthPct} cls="earth" />
+          <Bar label={w('Both', 'Both')} pct={m.bothPct} cls="both" />
+          <div className="sub">{w('Longest night', 'Longest darkness')} {formatDuration(m.longestDarkHours) || '0 h'} · {w('peak Sun', 'highest Sun')} {fmtDeg(m.maxSunEl, 1)}</div>
         </div>
       </div>
-      <div className="card">
-        <div className="label"><i className="dot-ico sun" /> Solar elevation</div>
-        <div className="big mono">{fmtDeg(m.sunEl)}</div>
-        <div className="sub">az {m.sunAz.toFixed(1)}° · disk {Math.round(m.diskFraction * 100)}% visible</div>
-        <div className={`countdown ${m.sunUp ? 'up' : 'down'}`}>
-          {m.sunUp ? 'Sunset in ' : 'Sunrise in '}<b>{sunFlip ?? `> ${m.windowDays} d`}</b>
-        </div>
-      </div>
-      <div className="card">
-        <div className="label"><i className="dot-ico earth" /> Earth elevation</div>
-        <div className="big mono">{fmtDeg(m.earthEl)}</div>
-        <div className="sub">az {m.earthAz.toFixed(1)}°</div>
-        <div className={`countdown ${m.earthUp ? 'up' : 'down'}`}>
-          {m.earthUp ? 'Earthset in ' : 'Earthrise in '}<b>{earthFlip ?? `> ${m.windowDays} d`}</b>
-        </div>
-      </div>
-      <div className="card">
-        <div className="label">Next {m.windowDays} days</div>
-        <Bar label="Sunlight" pct={m.sunPct} cls="sun" />
-        <Bar label="Earth in view" pct={m.earthPct} cls="earth" />
-        <Bar label="Both" pct={m.bothPct} cls="both" />
-        <div className="sub">Longest night {formatDuration(m.longestDarkHours) || '0 h'} · peak Sun {fmtDeg(m.maxSunEl, 1)}</div>
-      </div>
+      <Explain title="What do these numbers mean?" links={[{ id: 'sky-panel', label: 'Sky view' }, { id: 'power-panel', label: 'Power' }, { id: 'timeline-panel', label: 'Timeline' }]}>
+        <p>A lander needs two things: <b>sunlight</b> to make electricity with solar panels, and a <b>straight line to Earth</b> to send radio messages home. There is no air on the Moon to bend radio waves around mountains.</p>
+        <p><b>Elevation</b> is how many degrees above the flat horizon something is (0° = on the horizon, 90° = straight up). But real mountains stick up too, so the Sun counts as "up" only when it is higher than the mountains in its direction.</p>
+      </Explain>
     </div>
   )
 }
@@ -138,7 +153,7 @@ export function DatePlanner({ siteId, lat, lon, landing, onPick, horizon }) {
   const best = rows.reduce((a, b) => (b.both > a.both ? b : a), rows[0])
   const cell = (pct, kind) => ({ background: `color-mix(in oklab, var(--${kind}) ${Math.round(pct)}%, var(--cell-empty))` })
   return (
-    <div className="panel">
+    <div className="panel" id="planner-panel">
       <div className="panel-head">
         <h2>Landing date planner</h2>
         <p>
@@ -174,15 +189,20 @@ export function DatePlanner({ siteId, lat, lon, landing, onPick, horizon }) {
           </div>
         </div>
       </div>
+      <Explain title="Why does the date matter so much?" links={[{ id: 'timeline-panel', label: 'Timeline' }, { id: 'compare-panel', label: 'Compare plans' }]}>
+        <p>The Moon turns once every 29.5 Earth days, so one "day" there lasts about two weeks and one "night" about two weeks too. Land at the start of the lunar day and you get two weeks of sunshine. Land a week later and night comes after only a few days.</p>
+        <p>Earth also slowly wobbles up and down in the lunar sky (this is called <b>libration</b>), so radio contact from the poles comes and goes over weeks. Brighter columns are better landing days.</p>
+      </Explain>
     </div>
   )
 }
 
-function CompareRow({ s, onRemove, onLoad }) {
+function CompareRow({ s, onRemove, onLoad, onMetrics }) {
   const series = useSeries(s.siteId, s.lat, s.lon, s.landing, 14, 30)
   const horizon = useHorizon(s.siteId, s.mask, s.terrain)
   const m = useMemo(() => metricsAt(series, 0, horizon, 14), [series, horizon])
-  const v = verdict(m)
+  const v = verdict(m, useWords())
+  onMetrics?.(s.key, m)
   return (
     <tr>
       <td>
@@ -204,12 +224,27 @@ function CompareRow({ s, onRemove, onLoad }) {
 }
 
 export function Compare({ scenarios, onRemove, onLoad, onAdd }) {
+  const metrics = useRef({})
+  const exportCsv = () => {
+    const head = 'scenario,lat,lon,landing_utc,margin_deg,status,sun_el_deg,sun_up,sun_flip_h,earth_el_deg,earth_up,earth_flip_h,sun_pct_14d,earth_pct_14d,both_pct_14d,longest_night_h'
+    const rows = scenarios.map((s) => {
+      const m = metrics.current[s.key]
+      if (!m) return null
+      return [JSON.stringify(s.label), s.lat, s.lon, s.landing.toISOString(), s.mask, JSON.stringify(verdict(m).text),
+        m.sunEl.toFixed(3), m.sunUp ? 1 : 0, m.sunFlipHours?.toFixed(1) ?? '', m.earthEl.toFixed(3), m.earthUp ? 1 : 0,
+        m.earthFlipHours?.toFixed(1) ?? '', m.sunPct.toFixed(1), m.earthPct.toFixed(1), m.bothPct.toFixed(1), m.longestDarkHours.toFixed(1)].join(',')
+    }).filter(Boolean)
+    downloadText('lunar-scenario-comparison.csv', [head, ...rows].join('\n'))
+  }
   return (
-    <div className="panel">
+    <div className="panel" id="compare-panel">
       <div className="panel-head">
         <h2>Scenario comparison</h2>
         <p>Pin site + date combinations to compare them side by side. Values are at landing time; percentages cover the first 14 days.</p>
-        <button className="primary" onClick={onAdd}>+ Pin current scenario</button>
+        <div className="tools">
+          <button className="primary" onClick={onAdd}>+ Pin current scenario</button>
+          {scenarios.length > 0 && <button className="no-print" onClick={exportCsv}>Export CSV</button>}
+        </div>
       </div>
       {scenarios.length === 0 ? (
         <p className="empty">Nothing pinned yet. Try pinning the same site on two dates a week apart: the difference is usually dramatic.</p>
@@ -224,12 +259,15 @@ export function Compare({ scenarios, onRemove, onLoad, onAdd }) {
             </thead>
             <tbody>
               {scenarios.map((s) => (
-                <CompareRow key={s.key} s={s} onRemove={onRemove} onLoad={onLoad} />
+                <CompareRow key={s.key} s={s} onRemove={onRemove} onLoad={onLoad} onMetrics={(k, m) => { metrics.current[k] = m }} />
               ))}
             </tbody>
           </table>
         </div>
       )}
+      <Explain title="Why compare?" links={[{ id: 'planner-panel', label: 'Date planner' }, { id: 'map-panel', label: 'Map' }]}>
+        <p>Real missions rarely launch on the first planned day: rockets get delayed, hardware is late. When that happens, engineers must quickly check backup dates and nearby sites. Pin a few options here to see which plan still gives power and contact.</p>
+      </Explain>
     </div>
   )
 }
@@ -237,7 +275,7 @@ export function Compare({ scenarios, onRemove, onLoad, onAdd }) {
 export function MoonVsEarth({ lat, m }) {
   const earthNoon = 90 - Math.abs(lat) + 23.44
   return (
-    <div className="panel">
+    <div className="panel" id="facts-panel">
       <div className="panel-head">
         <h2>Why the Moon is different</h2>
       </div>
@@ -272,84 +310,64 @@ export function MoonVsEarth({ lat, m }) {
   )
 }
 
-const KIT_URL = `${import.meta.env.BASE_URL}kit/lunar-horizon-kit.mjs`
+
+const REPO_URL = 'https://github.com/Shyvve/NASA-Space-Apps-Challenge'
 
 /**
- * Terrain source for the current site. Curated sites have precomputed full-resolution profiles;
- * custom coordinates offer two modes: quick (in the browser) and precise (offline kit + import).
+ * Terrain source for the current site. Curated sites have precomputed full-resolution profiles.
+ * Custom coordinates: quick mode in the browser (automatic), precise mode in the downloaded version (one click).
  */
-export function TerrainPanel({ siteId, lat, lon, info, state, onQuick, onImport }) {
-  const [copied, setCopied] = useState(false)
-  const cmd = `node lunar-horizon-kit.mjs ${lat} ${lon} --out horizon.json`
+export function TerrainPanel({ siteId, lat, lon, info, state, localPrecise, onQuick, onPrecise }) {
   if (siteId !== 'custom') {
     return (
-      <div className="panel terrain">
+      <div className="panel terrain" id="terrain-panel">
         <h3>Terrain</h3>
         <p className="muted small">
           {info
-            ? `Precomputed full-resolution LOLA horizon (${info.resolutionM} m/px near the site). Surface ${info.elevationM.toLocaleString('en-US')} m.`
+            ? `Full-resolution LOLA horizon, precomputed (${info.resolutionM} m/px near the site). Surface ${info.elevationM.toLocaleString('en-US')} m.`
             : 'Loading terrain…'}
         </p>
-        <p className="muted small">Enter custom coordinates to compute terrain for any point on the Moon.</p>
       </div>
     )
   }
-  const mismatch = info && (Math.abs(info.site.lat - lat) > 0.01 || Math.abs(info.site.lon - lon) > 0.01)
+  const busy = ['loading', 'computing', 'downloading', 'precise'].includes(state.status)
   return (
-    <div className="panel terrain">
-      <h3>Terrain for custom coordinates</h3>
+    <div className="panel terrain" id="terrain-panel">
+      <h3>Terrain</h3>
       {state.status === 'error' && <p className="warn small" role="alert">Terrain failed: {state.error}</p>}
-      <div className={`terrain-status ${state.status === 'loading' || state.status === 'computing' ? state.status : info ? info.mode : 'idle'}`}>
-        {state.status === 'loading' && <>Downloading LOLA tiles… {state.done}/{state.total} ({(state.bytes / 1e6).toFixed(1)} MB)</>}
-        {state.status === 'computing' && <>Ray-tracing 720 directions…</>}
-        {!info && state.status !== 'loading' && state.status !== 'computing' && <>Flat horizon (no terrain yet)</>}
-        {info && state.status !== 'loading' && state.status !== 'computing' && (
+      <div className={`terrain-status ${busy ? 'loading' : info ? info.mode : 'idle'}`}>
+        {state.status === 'loading' && <>Downloading map tiles… {state.done}/{state.total} ({(state.bytes / 1e6).toFixed(1)} MB)</>}
+        {state.status === 'computing' && <>Calculating the horizon…</>}
+        {state.status === 'precise' && <>Calculating the precise horizon…</>}
+        {state.status === 'downloading' && <>Downloading NASA map {state.file}: {state.pct}% (first time only)</>}
+        {!busy && !info && <>Flat horizon (no terrain yet)</>}
+        {!busy && info && (
           <>
-            <b>{info.mode === 'precise' ? 'Precise' : 'Quick'} terrain</b>: {info.resolutionM} m/px at the site, surface{' '}
+            <b>{info.mode === 'precise' ? 'Precise' : 'Quick'}</b> · {info.resolutionM} m/px at the site · surface{' '}
             {info.elevationM.toLocaleString('en-US')} m
-            {info.mode === 'quick' && info.download && <> · {(info.download.bytes / 1e6).toFixed(1)} MB downloaded</>}
           </>
         )}
       </div>
-      {mismatch && <p className="warn small">This profile was computed for {info.site.lat}, {info.site.lon}, not the current coordinates.</p>}
-
-      <div className="mode">
-        <div className="mode-head">
-          <b>1 · Quick</b>
-          <span className="muted small">in the browser, ~0.3–3 MB</span>
-        </div>
-        <p className="muted small">Downloads only the LOLA tiles around the point: fine near the site, coarse far away. Accuracy {quickAccuracy(lat)}. Runs automatically when you change the coordinates.</p>
-        <button onClick={onQuick} disabled={state.status === 'loading' || state.status === 'computing'}>Recompute quick terrain</button>
+      {info?.mode === 'quick' && !busy && (
+        <p className="muted small">Quick mode, computed in your browser. Accuracy {quickAccuracy(lat)}.</p>
+      )}
+      <div className="terrain-actions">
+        {localPrecise ? (
+          <button className="primary" disabled={busy || info?.mode === 'precise'} onClick={onPrecise}>
+            {info?.mode === 'precise' ? '✓ Precise terrain' : 'Make it precise'}
+          </button>
+        ) : (
+          <a className="btn" href={`${REPO_URL}#run-it-on-your-computer`} target="_blank" rel="noreferrer">
+            Precise mode: download the app
+          </a>
+        )}
+        {info?.mode === 'precise' && <button disabled={busy} onClick={onQuick}>Back to quick</button>}
       </div>
-
-      <div className="mode">
-        <div className="mode-head">
-          <b>2 · Precise</b>
-          <span className="muted small">offline kit, full resolution</span>
-        </div>
-        <ol className="steps small">
-          <li><a href={KIT_URL} download="lunar-horizon-kit.mjs">Download the offline kit</a> (one file, needs Node.js 18+).</li>
-          <li>
-            Run it. The first run downloads full LOLA DEMs from NASA (33–180 MB):
-            <div className="cmd">
-              <code>{cmd}</code>
-              <button className="icon" title="Copy command" onClick={() => {
-                navigator.clipboard?.writeText(cmd).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }).catch(() => {})
-              }}>{copied ? '✓' : '⧉'}</button>
-            </div>
-          </li>
-          <li>
-            <label className="file-btn">
-              Import horizon.json
-              <input type="file" accept=".json,application/json" onChange={(e) => {
-                const file = e.target.files?.[0]
-                if (file) file.text().then(onImport)
-                e.target.value = ''
-              }} />
-            </label>
-          </li>
-        </ol>
-      </div>
+      {!localPrecise && (
+        <p className="muted small">
+          The downloaded version computes terrain from full-resolution NASA maps (80 m) with one click.
+        </p>
+      )}
     </div>
   )
 }

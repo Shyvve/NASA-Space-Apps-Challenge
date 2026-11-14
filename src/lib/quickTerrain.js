@@ -4,7 +4,7 @@ import { createTileDem } from './tileDem.js'
 const BASE = import.meta.env.BASE_URL
 let demPromise = null
 
-function getDem() {
+export function getDem() {
   demPromise ??= fetch(`${BASE}dem/manifest.json`)
     .then((r) => {
       if (!r.ok) throw new Error('Terrain tiles are not available')
@@ -48,16 +48,27 @@ export async function quickTerrain(lat, lon, onProgress) {
   }
 }
 
-/** Validates a horizon JSON produced by the offline kit. Throws with a readable message. */
-export function parseTerrainFile(text) {
-  let j
-  try {
-    j = JSON.parse(text)
-  } catch {
-    throw new Error('Not a JSON file')
+// ---- Precise mode (only in the downloaded / local version, see scripts/precise-server.mjs) ----
+
+let pingPromise = null
+/** Resolves true when the app runs locally with the precise-terrain API available. */
+export function hasLocalPrecise() {
+  pingPromise ??= fetch('/api/precise/ping')
+    .then((r) => r.ok && r.headers.get('content-type')?.includes('json'))
+    .catch(() => false)
+  return pingPromise
+}
+
+/** Asks the local server for a full-resolution horizon. onProgress({ status, file, pct }) while it works. */
+export async function preciseTerrain(lat, lon, onProgress) {
+  const r = await fetch(`/api/precise?lat=${lat}&lon=${lon}`)
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Precise terrain request failed')
+  const { id } = await r.json()
+  for (;;) {
+    await new Promise((res) => setTimeout(res, 600))
+    const job = await fetch(`/api/precise/job?id=${encodeURIComponent(id)}`).then((x) => x.json())
+    if (job.status === 'done') return job.result
+    if (job.status === 'error') throw new Error(job.error)
+    onProgress?.(job)
   }
-  if (!Array.isArray(j.mask) || !j.mask.length || !j.azStep || !j.site) throw new Error('Not a horizon file from the offline kit')
-  if (Math.abs(j.mask.length * j.azStep - 360) > 1e-6) throw new Error('Horizon profile does not cover 360°')
-  if (!j.mask.every((v) => typeof v === 'number' && Number.isFinite(v) && v >= -90 && v <= 90)) throw new Error('Horizon values out of range')
-  return { ...j, mode: j.mode || 'precise' }
 }

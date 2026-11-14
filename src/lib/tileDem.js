@@ -53,9 +53,9 @@ export function createTileDem(manifest, loadTile) {
 
   return {
     /** Downloads every tile the horizon computation will touch. Returns { tiles, bytes } downloaded now. */
-    async prepare(lat, lon, onProgress) {
+    async prepare(lat, lon, onProgress, opts) {
       const keys = new Set()
-      computeHorizon(lat, lon, makeSampler(keys))
+      computeHorizon(lat, lon, makeSampler(keys), opts)
       const todo = [...keys].filter((k) => !cache.has(k))
       let done = 0, bytes = 0
       await Promise.all(
@@ -70,8 +70,22 @@ export function createTileDem(manifest, loadTile) {
       )
       return { tiles: todo.length, bytes, total: keys.size }
     },
-    compute(lat, lon) {
-      return computeHorizon(lat, lon, makeSampler(null))
+    compute(lat, lon, opts) {
+      return computeHorizon(lat, lon, makeSampler(null), opts)
+    },
+    /** Height (m) at a point using tiles already downloaded; dist selects the resolution tier. */
+    sample: makeSampler(null),
+    /** Downloads the tiles covering a square of half-size halfM around (lat, lon) at the near-field tier. */
+    async prepareArea(lat, lon, halfM, n = 24) {
+      const keys = new Set()
+      const col = makeSampler(keys)
+      const R = 1737400, rad = Math.PI / 180
+      for (let i = 0; i <= n; i++)
+        for (let j = 0; j <= n; j++) {
+          const dn = -halfM + (2 * halfM * i) / n, de = -halfM + (2 * halfM * j) / n
+          col(lat + dn / R / rad, lon + de / (R * Math.cos(lat * rad)) / rad, 0)
+        }
+      await Promise.all([...keys].filter((k) => !cache.has(k)).map(async (k) => { const p = loadTile(k); cache.set(k, p); cache.set(k, await p) }))
     },
   }
 }
