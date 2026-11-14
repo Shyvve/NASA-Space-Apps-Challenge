@@ -22,7 +22,7 @@ export const EARTH_RADIUS_KM = 6378.137
 
 const DEG = Math.PI / 180
 
-function rotZ(v, a) {
+export function rotZ(v, a) {
   const c = Math.cos(a), s = Math.sin(a)
   return [c * v[0] + s * v[1], -s * v[0] + c * v[1], v[2]]
 }
@@ -39,7 +39,7 @@ function toMoonFixed(v, axis) {
   return rotZ(rotX(rotZ(v, Math.PI / 2 + alpha), Math.PI / 2 - delta), W)
 }
 
-function siteFrame(latDeg, lonDeg) {
+export function siteFrame(latDeg, lonDeg) {
   const lat = Math.max(-89.9999, Math.min(89.9999, latDeg)) * DEG
   const lon = lonDeg * DEG
   const cl = Math.cos(lat), sl = Math.sin(lat), co = Math.cos(lon), so = Math.sin(lon)
@@ -53,7 +53,7 @@ function siteFrame(latDeg, lonDeg) {
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 const norm = (a) => Math.hypot(a[0], a[1], a[2])
 
-function azEl(vecKm, frame) {
+export function azEl(vecKm, frame) {
   const d = [
     vecKm[0] - frame.up[0] * MOON_RADIUS_KM,
     vecKm[1] - frame.up[1] * MOON_RADIUS_KM,
@@ -88,4 +88,13 @@ export function sunEarthAt(date, lat, lon) {
     sun: { ...s, radiusDeg: Math.asin(SUN_RADIUS_KM / s.distKm) / DEG },
     earth: { ...e, radiusDeg: Math.asin(EARTH_RADIUS_KM / e.distKm) / DEG },
   }
+}
+
+/** Moon orientation and Earth position in the Moon body-fixed frame (km) at a JS Date. */
+export function moonFrame(date) {
+  const t = Astronomy.MakeTime(date)
+  const moon = Astronomy.GeoVector(Astronomy.Body.Moon, t, false)
+  const axis = Astronomy.RotationAxis(Astronomy.Body.Moon, t)
+  const earthBf = toMoonFixed([-moon.x * AU_KM, -moon.y * AU_KM, -moon.z * AU_KM], axis)
+  return { W: axis.spin * DEG, earthBf }
 }

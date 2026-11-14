@@ -17,6 +17,8 @@ export const fmtUTC = (ms) =>
 const toInput = (d) => d.toISOString().slice(0, 16)
 
 export function verdict(m, w = (e) => e) {
+  if (m.viaRelay && m.sunUp) return { cls: 'go', text: w('Power + link via relay satellite', 'Sunlight, and contact with Earth through the satellite') }
+  if (m.viaRelay) return { cls: 'warn', text: w('Link via relay only — Sun below horizon', 'Night, but contact through the satellite works') }
   if (m.sunUp && m.earthUp) return { cls: 'go', text: w('Power + direct-to-Earth link', 'All good: sunlight for power and Earth in view to talk home') }
   if (m.sunUp) return { cls: 'warn', text: w('Power only — no Earth in view', 'Sunlight, but Earth is hidden: no radio contact') }
   if (m.earthUp) return { cls: 'warn', text: w('Comms only — Sun below horizon', 'Earth in view, but it is night: running on batteries') }

@@ -183,7 +183,8 @@ export function Scene3D({ lat, lon, sun, earth }) {
       <div className="panel-head">
         <h2>3D view</h2>
         <p>
-          {(2 * patch.half / 1000).toFixed(0)}×{(2 * patch.half / 1000).toFixed(0)} km of LOLA terrain around the site (pin), lit by the Sun at the selected time.
+          {(2 * patch.half / 1000).toFixed(0)}×{(2 * patch.half / 1000).toFixed(0)} km of LOLA terrain around the site (pin), lit by the Sun at the selected time
+          {lat > -75 ? ' (coarse 3.8 km data outside the south polar region, so local relief looks flat)' : ''}.
           Drag to rotate, scroll to zoom. Shadows only come from terrain inside this patch; the panorama above uses 300 km.
         </p>
         <label className="exag">Height ×{exag}

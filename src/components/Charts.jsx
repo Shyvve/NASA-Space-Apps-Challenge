@@ -42,7 +42,7 @@ function trackPaths(az, el, x, y, every = 1) {
 }
 
 /** 360° horizon panorama: azimuth on X, elevation on Y, with the Sun and Earth tracks for the whole window. */
-export function Panorama({ series, index, horizon }) {
+export function Panorama({ series, index, horizon, relay }) {
   const W = 960, H = 280, L = 40, R = 12, T = 14, B = 30
   const { yMin, yMax } = elRange(series, horizon)
   const x = (az) => L + (az / 360) * (W - L - R)
@@ -105,17 +105,29 @@ export function Panorama({ series, index, horizon }) {
         <circle cx={x(cur.sun[0])} cy={y(cur.sun[1])} r={sunR * 2.2} fill="url(#sunGlow)" opacity="0.6" />
         <circle cx={x(cur.sun[0])} cy={y(cur.sun[1])} r={sunR} className="body sun" />
         <circle cx={x(cur.earth[0])} cy={y(cur.earth[1])} r={earthR} className="body earth" />
+        {relay && trackPaths(relay.az, relay.el, x, y, every).map((d, i) => (
+          <path key={`r${i}`} d={d} className="track relay" />
+        ))}
+        {relay && relay.el[index] <= yMax && (
+          <rect x={x(relay.az[index]) - 5} y={y(relay.el[index]) - 5} width="10" height="10" className="body relay" transform={`rotate(45 ${x(relay.az[index])} ${y(relay.el[index])})`} />
+        )}
         {/* terrain silhouette is drawn over the bodies, so anything below the local horizon is hidden */}
         <path d={skyline} className="ground" />
         <path d={ridge} className="horizon-line" fill="none" />
       </g>
+      {relay && relay.el[index] > yMax && (
+        <g>
+          <path d={`M${x(relay.az[index])},${T + 2}l-6,10h12z`} className="body relay" />
+          <text x={x(relay.az[index]) + 9} y={T + 12} className="axis relay-label">relay {relay.el[index].toFixed(0)}° up</text>
+        </g>
+      )}
       <text x={W - R - 6} y={H - B - 6} className="axis ground-label" textAnchor="end">{label}</text>
     </svg>
   )
 }
 
 /** Elevation vs time for the window, with visibility bands and a draggable time cursor. */
-export function Timeline({ series, index, horizon, clr, onScrub, start }) {
+export function Timeline({ series, index, horizon, clr, relayClr, onScrub, start }) {
   const ref = useRef(null)
   const W = 960, H = 250, L = 40, R = 12, T = 12, B = 64
   const n = series.t.length
@@ -183,9 +195,13 @@ export function Timeline({ series, index, horizon, clr, onScrub, start }) {
       {bands(clr.earth).map(([a, b]) => (
         <rect key={`eb${a}`} x={x(a)} width={Math.max(1, x(b) - x(a))} y={bandY1 + 10} height={7} className="band earth" />
       ))}
+      {relayClr && bands(relayClr).map(([a, b]) => (
+        <rect key={`rb${a}`} x={x(a)} width={Math.max(1, x(b) - x(a))} y={bandY1 + 20} height={7} className="band relay" />
+      ))}
       <text x={L - 6} y={bandY1 + 7} className="axis" textAnchor="end">Sun</text>
       <text x={L - 6} y={bandY1 + 17} className="axis" textAnchor="end">Earth</text>
-      <line x1={x(index)} x2={x(index)} y1={T} y2={bandY2} className="cursor" />
+      {relayClr && <text x={L - 6} y={bandY1 + 27} className="axis" textAnchor="end">Relay</text>}
+      <line x1={x(index)} x2={x(index)} y1={T} y2={relayClr ? bandY2 + 8 : bandY2} className="cursor" />
       <circle cx={x(index)} cy={y(Math.max(yMin, series.sunEl[index]))} r="4" className="dot sun" />
       <circle cx={x(index)} cy={y(Math.max(yMin, series.earthEl[index]))} r="4" className="dot earth" />
     </svg>

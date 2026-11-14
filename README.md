@@ -32,6 +32,7 @@ The downloaded version works like the website, plus **one-click precise terrain*
 - **360° sky panorama** with the real LOLA skyline, and Sun/Earth paths over 30 days.
 - **Mission timeline**: elevation over 30 days with visibility bands. Drag it or hit Play.
 - **3D view**: LOLA terrain around the site, lit by the Sun at the selected time, Earth in the sky (three.js).
+- **Relay satellites**: when Earth is hidden (far side, or behind south pole mountains), pick a relay: NRHO (Gateway-style), elliptical frozen orbit (LCRNS-style) or Earth–Moon L2 halo (Queqiao-style). The app shows direct vs relay vs total link time, the longest silence, and relay passes on the timeline and panorama. Orbits are simplified Kepler / halo models with an arbitrary phase.
 - **Solar power & battery**: panel area, efficiency and mounting → watts over time and the battery needed to survive the night.
 - **Landing date planner**: a heatmap of every landing day over 4 months. Shows how a one-week slip changes everything.
 - **Light around the site**: sunlight / Earth visibility over a year on a 9×9 grid around the site, each cell with its own horizon. "Move 300 m north and gain 20%".

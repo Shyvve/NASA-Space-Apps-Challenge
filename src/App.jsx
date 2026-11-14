@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { SITES, findSite } from './data/sites.js'
-import { clearances, metricsAt } from './lib/scenario.js'
+import { clearances, commsMetrics, metricsAt, relayClearance } from './lib/scenario.js'
+import { RELAYS, relaySeries } from './lib/relay.js'
+import { RelayPanel } from './components/Relay.jsx'
 import { useHorizon, useSeries } from './lib/useSeries.js'
 import { hasLocalPrecise, preciseTerrain, quickTerrain } from './lib/quickTerrain.js'
 import { exportSeriesCSV, printReport } from './lib/export.js'
@@ -43,6 +45,7 @@ function readUrl() {
   const i = Number(q.get('i'))
   if (q.has('i') && Number.isInteger(i) && i >= 0) out.index = i
   if (q.get('learn') === '1') out.learn = true
+  if (RELAYS[q.get('relay')]) out.relay = q.get('relay')
   return out
 }
 const initial = readUrl()
@@ -59,6 +62,7 @@ export default function App() {
   const [tour, setTour] = useState(false)
   const [toast, setToast] = useState(null)
   const [powerCfg, setPowerCfg] = useState({ area: 2, eff: 30, mount: 'tracking', facing: 0, load: 60 })
+  const [relayId, setRelayId] = useState(initial.relay ?? 'none')
   const w = (expert, simple) => (learn ? simple : expert)
 
   // ---- Terrain for custom coordinates: quick (browser tiles) or precise (local version, full-resolution DEMs) ----
@@ -112,7 +116,10 @@ export default function App() {
   const horizon = useHorizon(siteId, mask, terrainForSite)
   const clr = useMemo(() => clearances(series, horizon), [series, horizon])
   const safeIndex = Math.min(index, series.t.length - 1)
-  const m = useMemo(() => metricsAt(series, safeIndex, horizon, 14, clr), [series, safeIndex, horizon, clr])
+  const relay = useMemo(() => relaySeries(relayId, coords.lat, coords.lon, series.t), [relayId, coords.lat, coords.lon, series])
+  const relayClr = useMemo(() => relayClearance(relay, horizon), [relay, horizon])
+  const comms = useMemo(() => commsMetrics(clr, relayClr, safeIndex, STEP_MIN, 14), [clr, relayClr, safeIndex])
+  const m = useMemo(() => ({ ...metricsAt(series, safeIndex, horizon, 14, clr), viaRelay: comms.viaRelay }), [series, safeIndex, horizon, clr, comms.viaRelay])
   const power = useMemo(() => powerSeries(series, clr, powerCfg), [series, clr, powerCfg])
   const now = series.t[safeIndex]
 
@@ -134,9 +141,10 @@ export default function App() {
     if (mask) q.set('m', String(mask))
     if (safeIndex) q.set('i', String(safeIndex))
     if (learn) q.set('learn', '1')
+    if (relayId !== 'none') q.set('relay', relayId)
     const id = setTimeout(() => history.replaceState(null, '', `${location.pathname}?${q}`), 300)
     return () => clearTimeout(id)
-  }, [siteId, coords.lat, coords.lon, landing, mask, safeIndex, learn])
+  }, [siteId, coords.lat, coords.lon, landing, mask, safeIndex, learn, relayId])
 
   const flash = (text) => {
     setToast(text)
@@ -201,7 +209,7 @@ export default function App() {
             </div>
             <button onClick={() => { setLearn(true); setTour(true) }}>Take the tour</button>
             <button onClick={shareLink}>Share link</button>
-            <button onClick={() => exportSeriesCSV({ label, lat: coords.lat, lon: coords.lon, series, clr, horizon, power })}>Export CSV</button>
+            <button onClick={() => exportSeriesCSV({ label, lat: coords.lat, lon: coords.lon, series, clr, horizon, power, relay, relayClr })}>Export CSV</button>
             <button onClick={printReport}>Print / PDF</button>
             <a className="btn" href={REPO_URL} target="_blank" rel="noreferrer">⬇ Download app</a>
           </div>
@@ -255,10 +263,11 @@ export default function App() {
                   {w(`The faint lines are the paths of the Sun and Earth over the next ${DAYS} days.`, `The thin lines show where the Sun and Earth will move over the next ${DAYS} days.`)}
                 </p>
               </div>
-              <Panorama series={series} index={safeIndex} horizon={horizon} />
+              <Panorama series={series} index={safeIndex} horizon={horizon} relay={relay} />
               <div className="legend">
                 <span><i className="dot-ico sun" /> Sun</span>
                 <span><i className="dot-ico earth" /> Earth</span>
+                {relay && <span><i className="dot-ico relay" /> Relay ({RELAYS[relayId].short})</span>}
                 <span><i className="dot-ico ground" /> {w('Below horizon: no power / no direct link', 'Hidden by mountains: no power / no contact')}</span>
               </div>
               <Explain title="How to read this picture" links={[{ id: 'status-cards', label: 'Status' }, { id: 'scene-panel', label: '3D view' }, { id: 'map-panel', label: 'Map' }]}>
@@ -279,13 +288,15 @@ export default function App() {
                   <span className="mono muted">T+{((now - landing.getTime()) / HOUR / 24).toFixed(1)} d</span>
                 </div>
               </div>
-              <Timeline series={series} index={safeIndex} horizon={horizon} clr={clr} onScrub={(k) => { setPlaying(false); setIndex(k) }} start={landing} />
+              <Timeline series={series} index={safeIndex} horizon={horizon} clr={clr} relayClr={relayClr} onScrub={(k) => { setPlaying(false); setIndex(k) }} start={landing} />
               <Explain title="Why does it change so slowly?" links={[{ id: 'planner-panel', label: 'Date planner' }, { id: 'power-panel', label: 'Power' }]}>
                 <p>The Moon spins very slowly: one full day-and-night takes 29.5 Earth days. So the Sun crawls across the sky. The dashed lines are the mountain height in the direction of the Sun and Earth: when a solid line drops below its dashed line, that body is hidden.</p>
               </Explain>
             </div>
 
             <Scene3D lat={coords.lat} lon={coords.lon} sun={{ az: m.sunAz, el: m.sunEl }} earth={{ az: m.earthAz, el: m.earthEl }} />
+
+            <RelayPanel relayId={relayId} onRelay={setRelayId} relay={relay} clr={clr} relayClr={relayClr} comms={comms} series={series} index={safeIndex} />
 
             <PowerPanel series={series} clr={clr} index={safeIndex} cfg={powerCfg} onCfg={setPowerCfg} />
 

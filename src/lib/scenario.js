@@ -178,3 +178,41 @@ export function formatDuration(hours) {
   const total = Math.round(hours)
   return `${Math.floor(total / 24)} d ${total % 24} h`
 }
+
+/**
+ * Relay link margin per sample: elevation above the local horizon, or -90 when the relay cannot see Earth.
+ * Positive = the lander can talk to Earth through the relay.
+ */
+export function relayClearance(relay, horizon) {
+  if (!relay) return null
+  const out = new Float32Array(relay.el.length)
+  for (let k = 0; k < out.length; k++) out[k] = relay.earth[k] ? relay.el[k] - horizonAt(horizon, relay.az[k]) : -90
+  return out
+}
+
+/** Communication metrics with an optional relay: direct, relay, either; gap lengths in hours. */
+export function commsMetrics(clr, relayClr, i, stepMin, windowDays = 14) {
+  const n = clr.earth.length
+  const end = Math.min(n, i + Math.round((windowDays * 24 * 60) / stepMin))
+  const up = (k) => clr.earth[k] > 0 || (relayClr && relayClr[k] > 0)
+  let direct = 0, relay = 0, any = 0, gap = 0, worst = 0
+  for (let k = i; k < end; k++) {
+    const d = clr.earth[k] > 0, r = relayClr ? relayClr[k] > 0 : false
+    if (d) direct++
+    if (r) relay++
+    if (d || r) { any++; gap = 0 } else { gap++; worst = Math.max(worst, gap) }
+  }
+  let flip = null
+  for (let k = i + 1; k < n; k++) if (up(k) !== up(i)) { flip = ((k - i) * stepMin) / 60; break }
+  const total = Math.max(1, end - i)
+  return {
+    linkUp: up(i),
+    viaRelay: !(clr.earth[i] > 0) && !!relayClr && relayClr[i] > 0,
+    relayUp: !!relayClr && relayClr[i] > 0,
+    directPct: (100 * direct) / total,
+    relayPct: (100 * relay) / total,
+    anyPct: (100 * any) / total,
+    longestGapHours: (worst * stepMin) / 60,
+    linkFlipHours: flip,
+  }
+}

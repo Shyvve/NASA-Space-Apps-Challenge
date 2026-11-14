@@ -8,6 +8,7 @@ export const TOUR_STEPS = [
   { id: 'scene-panel', title: 'See it in 3D', text: 'The same place as a 3D model. Drag to look around. Shadows come from the real Sun position. Near the pole the Sun skims the horizon, so shadows are kilometres long.' },
   { id: 'planner-panel', title: 'Pick a good day', text: 'Each column is a possible landing day. Bright = lots of sunlight / Earth contact in the two weeks after landing. A delay of a few days can change everything.' },
   { id: 'illum-panel', title: 'Move a little, gain a lot', text: 'Near the poles, moving just a few hundred metres onto a ridge can give much more sunlight. Scan to find the best spot nearby.' },
+  { id: 'relay-panel', title: 'No Earth in the sky? Use a satellite', text: 'From the far side, or behind south pole mountains, Earth is hidden. Pick a relay satellite to see when the lander can still send messages home through it.' },
   { id: 'power-panel', title: 'Will we have enough electricity?', text: 'Turn sunlight into watts. Change the panel size and the lander\'s power use to see how big a battery you need to survive the night.' },
   { id: 'compare-panel', title: 'Compare plans', text: 'Pin different sites and dates and compare them side by side, like engineers do when a launch slips.' },
 ]
