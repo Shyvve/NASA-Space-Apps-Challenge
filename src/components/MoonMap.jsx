@@ -64,7 +64,7 @@ export function MoonMap({ lat, lon, siteId, onPick, onSite }) {
           onPick(Math.round(la * 10000) / 10000, Math.round(lo * 10000) / 10000)
         }}
       >
-        <img src={`${BASE}${V.img}`} alt={`Shaded relief map: ${V.label}`} draggable="false" loading="lazy" />
+        <img src={`${BASE}${V.img}`} alt={`Shaded relief map: ${V.label}`} draggable="false" decoding="async" />
         {view === 'pole' && <span className="map-tag" style={{ left: '50%', top: '50%' }}>South pole</span>}
         {SITES.filter((s) => inView(view, s.lat, s.lon)).map((s) => {
           const [x, y] = V.to(s.lat, s.lon)
