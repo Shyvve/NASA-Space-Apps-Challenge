@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { SITES, findSite } from './data/sites.js'
-import { metricsAt } from './lib/scenario.js'
-import { useSeries } from './lib/useSeries.js'
+import { clearances, metricsAt } from './lib/scenario.js'
+import { useHorizon, useSeries } from './lib/useSeries.js'
 import { Panorama, Timeline } from './components/Charts.jsx'
 import { Compare, DatePlanner, MetricCards, MoonVsEarth, SitePicker, fmtUTC } from './components/Panels.jsx'
 
@@ -29,7 +29,9 @@ export default function App() {
 
   const site = findSite(siteId)
   const series = useSeries(siteId, coords.lat, coords.lon, landing, DAYS, STEP_MIN)
-  const m = useMemo(() => metricsAt(series, index, mask, 14), [series, index, mask])
+  const horizon = useHorizon(siteId, mask)
+  const clr = useMemo(() => clearances(series, horizon), [series, horizon])
+  const m = useMemo(() => metricsAt(series, index, horizon, 14, clr), [series, index, horizon, clr])
   const now = series.t[index]
 
   useEffect(() => {
@@ -87,6 +89,7 @@ export default function App() {
           <b>{site ? site.name : 'Custom site'}</b>
           <span className="mono">{coords.lat.toFixed(2)}°, {coords.lon.toFixed(2)}°E</span>
           {site && <span className="muted">{site.note}</span>}
+          {horizon.info && <span className="muted small">Surface {horizon.info.elevationM.toLocaleString('en-US')} m · LOLA {horizon.info.resolutionM} m/px terrain</span>}
         </div>
       </header>
 
@@ -96,7 +99,7 @@ export default function App() {
             siteId={siteId} lat={coords.lat} lon={coords.lon}
             onSite={chooseSite} onCoords={setCustomCoords}
             landing={landing} onLanding={chooseLanding}
-            mask={mask} onMask={setMask}
+            mask={mask} onMask={setMask} terrain={horizon.info}
           />
           <div className="panel quick">
             <h3>Quick picks</h3>
@@ -121,7 +124,7 @@ export default function App() {
                 Full 360° view of the horizon at <b className="mono">{fmtUTC(now)}</b>. The faint lines are the paths of the Sun and Earth over the next {DAYS} days.
               </p>
             </div>
-            <Panorama series={series} index={index} mask={mask} />
+            <Panorama series={series} index={index} horizon={horizon} />
             <div className="legend">
               <span><i className="dot-ico sun" /> Sun</span>
               <span><i className="dot-ico earth" /> Earth</span>
@@ -141,10 +144,10 @@ export default function App() {
                 <span className="mono muted">T+{((now - landing.getTime()) / HOUR / 24).toFixed(1)} d</span>
               </div>
             </div>
-            <Timeline series={series} index={index} mask={mask} onScrub={(k) => { setPlaying(false); setIndex(k) }} start={landing} />
+            <Timeline series={series} index={index} horizon={horizon} clr={clr} onScrub={(k) => { setPlaying(false); setIndex(k) }} start={landing} />
           </div>
 
-          <DatePlanner siteId={siteId} lat={coords.lat} lon={coords.lon} landing={landing} onPick={chooseLanding} mask={mask} />
+          <DatePlanner siteId={siteId} lat={coords.lat} lon={coords.lon} landing={landing} onPick={chooseLanding} horizon={horizon} />
 
           <Compare scenarios={scenarios} onAdd={pin} onLoad={loadScenario}
             onRemove={(key) => setScenarios((l) => l.filter((s) => s.key !== key))} />
@@ -155,8 +158,9 @@ export default function App() {
             <p>
               Ephemerides: <a href="https://ssd.jpl.nasa.gov/horizons/" target="_blank" rel="noreferrer">JPL Horizons</a> (DE441, airless apparent, pre-downloaded for curated sites)
               and an in-browser model (astronomy-engine + IAU lunar rotation model with libration), which agrees with Horizons to within 0.004° (RMS 0.001°) across all curated sites.
-              Terrain: geometric horizon plus a uniform mask. Per-azimuth LOLA horizon masks are the next step.
-              Site coordinates for south pole candidate regions are approximate.
+              Terrain: horizon profiles ray-traced to 300 km through <a href="https://pds-geosciences.wustl.edu/missions/lro/lola.htm" target="_blank" rel="noreferrer">LOLA</a> DEMs
+              (80 m and 240 m south polar, 1.9 km global), observer 2 m above ground. Custom coordinates use a flat horizon.
+              Shackleton rim, Malapert and Nobile are the best-lit LOLA points near those features; NASA does not publish center points for Artemis III regions.
             </p>
             <p>Built for the NASA Space Apps Challenge 2026: Lunar Landing Site Navigator.</p>
           </footer>

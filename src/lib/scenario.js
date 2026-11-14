@@ -82,20 +82,35 @@ export function computeSeries(sampler, start, days = 30, stepMin = 30) {
   return { t, sunAz, sunEl, earthAz, earthEl, stepMin, days, sources: [...sources] }
 }
 
-/** Terrain horizon elevation at a given azimuth. mask = number (uniform) */
-export const horizonAt = (mask) => (typeof mask === 'number' ? mask : 0)
-
-function visibleArray(el, radius, mask) {
-  const h = horizonAt(mask)
-  return Array.from(el, (e) => e + radius > h)
+/**
+ * Local horizon model: LOLA terrain profile (horizon elevation per azimuth bin) plus a uniform extra margin.
+ * horizon = { terrain: number[] | null, azStep: number, extra: number }
+ */
+export function horizonAt(horizon, az) {
+  if (!horizon) return 0
+  let h = horizon.extra || 0
+  const t = horizon.terrain
+  if (t) {
+    const x = (((az % 360) + 360) % 360) / horizon.azStep
+    const i = Math.floor(x) % t.length, j = (i + 1) % t.length, f = x - Math.floor(x)
+    h += t[i] * (1 - f) + t[j] * f
+  }
+  return h
 }
 
-// Time (hours) from sample index `i` until visibility flips; null if no flip in the series.
-function hoursToFlip(vis, el, radius, mask, i, stepMin) {
-  const h = horizonAt(mask)
-  for (let k = i + 1; k < vis.length; k++) {
-    if (vis[k] !== vis[i]) {
-      const a = el[k - 1] + radius - h, b = el[k] + radius - h
+// Elevation above the local horizon (positive = upper limb clears the terrain).
+function clearance(el, az, radius, horizon) {
+  const out = new Float32Array(el.length)
+  for (let k = 0; k < el.length; k++) out[k] = el[k] + radius - horizonAt(horizon, az[k])
+  return out
+}
+
+// Time (hours) from sample i until the sign of the clearance flips; null if no flip in the series.
+function hoursToFlip(clr, i, stepMin) {
+  const up = clr[i] > 0
+  for (let k = i + 1; k < clr.length; k++) {
+    if (clr[k] > 0 !== up) {
+      const a = clr[k - 1], b = clr[k]
       const f = a === b ? 0 : a / (a - b)
       return ((k - 1 - i + f) * stepMin) / 60
     }
@@ -103,51 +118,54 @@ function hoursToFlip(vis, el, radius, mask, i, stepMin) {
   return null
 }
 
-function longestRun(vis, from, to) {
+function longestRun(pred, from, to) {
   let best = 0, cur = 0
   for (let k = from; k < to; k++) {
-    cur = vis[k] ? cur + 1 : 0
+    cur = pred(k) ? cur + 1 : 0
     if (cur > best) best = cur
   }
   return best
 }
 
-/**
- * Operational metrics at series index i, looking `windowDays` ahead.
- */
-export function metricsAt(series, i, mask = 0, windowDays = 14) {
-  const { sunEl, earthEl, stepMin } = series
-  const sunVis = visibleArray(sunEl, SUN_RADIUS_DEG, mask)
-  const earthVis = visibleArray(earthEl, EARTH_RADIUS_DEG, mask)
+/** Per-sample clearances for a series and horizon (memoize this: it is reused by metrics and charts). */
+export function clearances(series, horizon) {
+  return {
+    sun: clearance(series.sunEl, series.sunAz, SUN_RADIUS_DEG, horizon),
+    earth: clearance(series.earthEl, series.earthAz, EARTH_RADIUS_DEG, horizon),
+  }
+}
+
+/** Operational metrics at series index i, looking `windowDays` ahead. */
+export function metricsAt(series, i, horizon, windowDays = 14, clr = clearances(series, horizon)) {
+  const { sunEl, stepMin } = series
   const end = Math.min(sunEl.length, i + Math.round((windowDays * 24 * 60) / stepMin))
   let sunCount = 0, earthCount = 0, bothCount = 0, maxSun = -90
   for (let k = i; k < end; k++) {
-    if (sunVis[k]) sunCount++
-    if (earthVis[k]) earthCount++
-    if (sunVis[k] && earthVis[k]) bothCount++
+    const s = clr.sun[k] > 0, e = clr.earth[k] > 0
+    if (s) sunCount++
+    if (e) earthCount++
+    if (s && e) bothCount++
     if (sunEl[k] > maxSun) maxSun = sunEl[k]
   }
   const total = Math.max(1, end - i)
-  // Fraction of the solar disk above the horizon (0..1), approximated linearly over the diameter.
-  const h = horizonAt(mask)
-  const diskFraction = Math.max(0, Math.min(1, (sunEl[i] - h + SUN_RADIUS_DEG) / (2 * SUN_RADIUS_DEG)))
   return {
     sunEl: sunEl[i],
     sunAz: series.sunAz[i],
-    earthEl: earthEl[i],
+    earthEl: series.earthEl[i],
     earthAz: series.earthAz[i],
-    sunUp: sunVis[i],
-    earthUp: earthVis[i],
-    diskFraction,
-    // Flat-panel power factor for a horizontally-mounted panel is ~sin(el); vertical tracking panels see ~full sun.
-    powerVertical: sunVis[i] ? diskFraction : 0,
-    sunFlipHours: hoursToFlip(sunVis, sunEl, SUN_RADIUS_DEG, mask, i, stepMin),
-    earthFlipHours: hoursToFlip(earthVis, earthEl, EARTH_RADIUS_DEG, mask, i, stepMin),
+    sunHorizon: horizonAt(horizon, series.sunAz[i]),
+    earthHorizon: horizonAt(horizon, series.earthAz[i]),
+    sunUp: clr.sun[i] > 0,
+    earthUp: clr.earth[i] > 0,
+    // Fraction of the solar disk above the local horizon (0..1), linear over the diameter.
+    diskFraction: Math.max(0, Math.min(1, clr.sun[i] / (2 * SUN_RADIUS_DEG))),
+    sunFlipHours: hoursToFlip(clr.sun, i, stepMin),
+    earthFlipHours: hoursToFlip(clr.earth, i, stepMin),
     sunPct: (100 * sunCount) / total,
     earthPct: (100 * earthCount) / total,
     bothPct: (100 * bothCount) / total,
-    longestSunHours: (longestRun(sunVis, i, end) * stepMin) / 60,
-    longestDarkHours: (longestRun(sunVis.map((v) => !v), i, end) * stepMin) / 60,
+    longestSunHours: (longestRun((k) => clr.sun[k] > 0, i, end) * stepMin) / 60,
+    longestDarkHours: (longestRun((k) => clr.sun[k] <= 0, i, end) * stepMin) / 60,
     maxSunEl: maxSun,
     windowDays,
   }

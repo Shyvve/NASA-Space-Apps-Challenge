@@ -1,10 +1,11 @@
 import { useRef } from 'react'
-import { EARTH_RADIUS_DEG, SUN_RADIUS_DEG } from '../lib/scenario.js'
+import { EARTH_RADIUS_DEG, SUN_RADIUS_DEG, horizonAt } from '../lib/scenario.js'
 
 const DAY = 86400000
 
-function elRange(series, index) {
+function elRange(series, horizon) {
   let hi = -90, lo = 90
+  for (let a = 0; a < 360; a += 2) hi = Math.max(hi, horizonAt(horizon, a))
   for (let k = 0; k < series.sunEl.length; k++) {
     hi = Math.max(hi, series.sunEl[k], series.earthEl[k])
     lo = Math.min(lo, series.sunEl[k], series.earthEl[k])
@@ -41,9 +42,9 @@ function trackPaths(az, el, x, y, every = 1) {
 }
 
 /** 360° horizon panorama: azimuth on X, elevation on Y, with the Sun and Earth tracks for the whole window. */
-export function Panorama({ series, index, mask }) {
+export function Panorama({ series, index, horizon }) {
   const W = 960, H = 280, L = 40, R = 12, T = 14, B = 30
-  const { yMin, yMax } = elRange(series, index)
+  const { yMin, yMax } = elRange(series, horizon)
   const x = (az) => L + (az / 360) * (W - L - R)
   const y = (el) => T + ((yMax - el) / (yMax - yMin)) * (H - T - B)
   const pxPerDeg = (H - T - B) / (yMax - yMin)
@@ -54,6 +55,14 @@ export function Panorama({ series, index, mask }) {
     earth: [series.earthAz[index], series.earthEl[index]],
   }
   const every = Math.max(1, Math.floor(series.sunAz.length / 600))
+  const ridgePts = []
+  for (let a = 0; a <= 360; a += 0.5) ridgePts.push(`${x(a).toFixed(1)},${y(horizonAt(horizon, a)).toFixed(1)}`)
+  const ridge = `M${ridgePts.join('L')}`
+  const skyline = `M${L},${H - B}L${ridgePts.join('L')}L${W - R},${H - B}Z`
+  const extra = horizon.extra ? ` + ${horizon.extra}° margin` : ''
+  const label = horizon.terrain
+    ? `LOLA terrain horizon${extra} (no atmosphere, no refraction)`
+    : `Flat horizon${extra}: no terrain data for custom coordinates`
   return (
     <svg className="chart" viewBox={`0 0 ${W} ${H}`} role="img"
       aria-label="Sun and Earth positions around the horizon over the planning window">
@@ -96,23 +105,21 @@ export function Panorama({ series, index, mask }) {
         <circle cx={x(cur.sun[0])} cy={y(cur.sun[1])} r={sunR * 2.2} fill="url(#sunGlow)" opacity="0.6" />
         <circle cx={x(cur.sun[0])} cy={y(cur.sun[1])} r={sunR} className="body sun" />
         <circle cx={x(cur.earth[0])} cy={y(cur.earth[1])} r={earthR} className="body earth" />
-        {/* terrain mask (uniform for now): drawn over the bodies, so anything below the horizon is hidden */}
-        <rect x={L} y={y(mask)} width={W - L - R} height={H - B - y(mask)} className="ground" />
+        {/* terrain silhouette is drawn over the bodies, so anything below the local horizon is hidden */}
+        <path d={skyline} className="ground" />
+        <path d={ridge} className="horizon-line" fill="none" />
       </g>
-      <line x1={L} x2={W - R} y1={y(mask)} y2={y(mask)} className="horizon-line" />
-      <text x={W - R - 6} y={y(mask) + 14} className="axis ground-label" textAnchor="end">
-        {mask === 0 ? 'Geometric horizon (no atmosphere, no refraction)' : `Terrain horizon ${mask}°`}
-      </text>
+      <text x={W - R - 6} y={H - B - 6} className="axis ground-label" textAnchor="end">{label}</text>
     </svg>
   )
 }
 
 /** Elevation vs time for the window, with visibility bands and a draggable time cursor. */
-export function Timeline({ series, index, mask, onScrub, start }) {
+export function Timeline({ series, index, horizon, clr, onScrub, start }) {
   const ref = useRef(null)
   const W = 960, H = 250, L = 40, R = 12, T = 12, B = 64
   const n = series.t.length
-  const { yMin, yMax } = elRange(series, index)
+  const { yMin, yMax } = elRange(series, horizon)
   const x = (k) => L + (k / (n - 1)) * (W - L - R)
   const y = (el) => T + ((yMax - el) / (yMax - yMin)) * (H - T - B)
   const line = (arr) => {
@@ -121,11 +128,11 @@ export function Timeline({ series, index, mask, onScrub, start }) {
     for (let k = 0; k < n; k += every) d += `${d ? 'L' : 'M'}${x(k).toFixed(1)},${y(arr[k]).toFixed(1)}`
     return d
   }
-  const bands = (arr, radius) => {
+  const bands = (c) => {
     const out = []
     let s = null
     for (let k = 0; k < n; k++) {
-      const up = arr[k] + radius > mask
+      const up = c[k] > 0
       if (up && s == null) s = k
       if ((!up || k === n - 1) && s != null) {
         out.push([s, up ? k : k - 1])
@@ -165,13 +172,15 @@ export function Timeline({ series, index, mask, onScrub, start }) {
           </g>
         )
       })}
-      <rect x={L} y={y(mask)} width={W - L - R} height={H - B - y(mask)} className="ground faint" />
+      {/* local horizon in each body's direction: the body is visible while its line is above its dashed line */}
+      <path d={line(Array.from(series.earthAz, (a) => Math.max(yMin, horizonAt(horizon, a))))} className="line earth hz" />
+      <path d={line(Array.from(series.sunAz, (a) => Math.max(yMin, horizonAt(horizon, a))))} className="line sun hz" />
       <path d={line(series.earthEl.map((v) => Math.max(yMin, v)))} className="line earth" />
       <path d={line(series.sunEl.map((v) => Math.max(yMin, v)))} className="line sun" />
-      {bands(series.sunEl, SUN_RADIUS_DEG).map(([a, b]) => (
+      {bands(clr.sun).map(([a, b]) => (
         <rect key={`sb${a}`} x={x(a)} width={Math.max(1, x(b) - x(a))} y={bandY1} height={7} className="band sun" />
       ))}
-      {bands(series.earthEl, EARTH_RADIUS_DEG).map(([a, b]) => (
+      {bands(clr.earth).map(([a, b]) => (
         <rect key={`eb${a}`} x={x(a)} width={Math.max(1, x(b) - x(a))} y={bandY1 + 10} height={7} className="band earth" />
       ))}
       <text x={L - 6} y={bandY1 + 7} className="axis" textAnchor="end">Sun</text>

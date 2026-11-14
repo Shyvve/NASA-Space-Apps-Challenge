@@ -46,7 +46,8 @@ async function query(target, site) {
 }
 
 await mkdir('public/horizons', { recursive: true })
-for (const site of SITES) {
+const only = process.argv.slice(2)
+for (const site of SITES.filter((s) => !only.length || only.includes(s.id))) {
   const sun = await query('10', site)
   const earth = await query('399', site)
   const out = {

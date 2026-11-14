@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { SITES } from '../data/sites.js'
-import { EARTH_RADIUS_DEG, SUN_RADIUS_DEG, formatDuration, metricsAt } from '../lib/scenario.js'
-import { useSeries } from '../lib/useSeries.js'
+import { EARTH_RADIUS_DEG, SUN_RADIUS_DEG, clearances, formatDuration, metricsAt } from '../lib/scenario.js'
+import { useHorizon, useSeries } from '../lib/useSeries.js'
 
 const DAY = 86400000
 const groups = [...new Set(SITES.map((s) => s.group))]
@@ -20,7 +20,7 @@ export function verdict(m) {
   return { cls: 'nogo', text: 'No power, no direct comms' }
 }
 
-export function SitePicker({ siteId, lat, lon, onSite, onCoords, landing, onLanding, mask, onMask }) {
+export function SitePicker({ siteId, lat, lon, onSite, onCoords, landing, onLanding, mask, onMask, terrain }) {
   return (
     <div className="panel controls">
       <label className="field">
@@ -54,9 +54,13 @@ export function SitePicker({ siteId, lat, lon, onSite, onCoords, landing, onLand
           onChange={(e) => e.target.value && onLanding(new Date(`${e.target.value}:00Z`))} />
       </label>
       <label className="field">
-        <span>Local terrain horizon: <b>{mask.toFixed(1)}°</b></span>
+        <span>Extra horizon margin: <b>{mask.toFixed(1)}°</b></span>
         <input type="range" min="0" max="5" step="0.1" value={mask} onChange={(e) => onMask(Number(e.target.value))} />
-        <small>Raise it to model nearby ridges and crater walls. Near the south pole even 1–2° of terrain can cut sunlight by days.</small>
+        <small>
+          {terrain
+            ? `Real terrain from LOLA is already included (${terrain.resolutionM} m/px). Add a margin for local boulders, the lander's own structure, or a safety buffer.`
+            : 'No terrain data for custom coordinates: the horizon is flat. Raise this to approximate nearby ridges and crater walls.'}
+        </small>
       </label>
     </div>
   )
@@ -113,7 +117,7 @@ function Bar({ label, pct, cls }) {
 }
 
 /** Landing-date sweep: for each candidate landing day, how much Sun/Earth the following 14 days offer. */
-export function DatePlanner({ siteId, lat, lon, landing, onPick, mask }) {
+export function DatePlanner({ siteId, lat, lon, landing, onPick, horizon }) {
   const planStart = useMemo(() => {
     const d = new Date(landing)
     return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1))
@@ -122,12 +126,13 @@ export function DatePlanner({ siteId, lat, lon, landing, onPick, mask }) {
   const series = useSeries(siteId, lat, lon, planStart, DAYS + WIN, 60)
   const rows = useMemo(() => {
     const out = []
+    const clr = clearances(series, horizon)
     for (let d = 0; d < DAYS; d++) {
-      const m = metricsAt(series, d * 24, mask, WIN)
+      const m = metricsAt(series, d * 24, horizon, WIN, clr)
       out.push({ d, sun: m.sunPct, earth: m.earthPct, both: m.bothPct })
     }
     return out
-  }, [series, mask])
+  }, [series, horizon])
   const landingDay = Math.floor((landing.getTime() - planStart.getTime()) / DAY)
   const best = rows.reduce((a, b) => (b.both > a.both ? b : a), rows[0])
   const cell = (pct, kind) => ({ background: `color-mix(in oklab, var(--${kind}) ${Math.round(pct)}%, var(--cell-empty))` })
@@ -174,13 +179,14 @@ export function DatePlanner({ siteId, lat, lon, landing, onPick, mask }) {
 
 function CompareRow({ s, onRemove, onLoad }) {
   const series = useSeries(s.siteId, s.lat, s.lon, s.landing, 14, 30)
-  const m = useMemo(() => metricsAt(series, 0, s.mask, 14), [series, s.mask])
+  const horizon = useHorizon(s.siteId, s.mask)
+  const m = useMemo(() => metricsAt(series, 0, horizon, 14), [series, horizon])
   const v = verdict(m)
   return (
     <tr>
       <td>
         <button className="link" onClick={() => onLoad(s)}>{s.label}</button>
-        <div className="muted mono small">{s.lat.toFixed(2)}°, {s.lon.toFixed(2)}°E{s.mask ? ` · mask ${s.mask}°` : ''}</div>
+        <div className="muted mono small">{s.lat.toFixed(2)}°, {s.lon.toFixed(2)}°E{s.mask ? ` · +${s.mask}° margin` : ''}</div>
       </td>
       <td className="mono small">{fmtUTC(s.landing.getTime())}</td>
       <td><span className={`pill ${v.cls}`}>{v.text}</span></td>
