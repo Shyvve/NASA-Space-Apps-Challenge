@@ -3,6 +3,8 @@
 name = "lunar-navigator-assistant"
 main = "index.js"
 compatibility_date = "2025-09-01"
+workers_dev = true
+preview_urls = false
 
 [vars]
 # Websites allowed to use this proxy (comma-separated, exact origins).
