@@ -2,6 +2,8 @@
 
 NASA Space Apps Challenge 2026: [Lunar Landing Site Navigator](https://www.spaceappschallenge.org/2026/challenges/lunar-landing-site-navigator/).
 
+**Live site: https://shyvve.github.io/NASA-Space-Apps-Challenge/**
+
 A web app for picking a landing site and date on the Moon and checking two things right away:
 **will the Sun be up for power**, and **will Earth be up for a direct link**. It also shows how long each will last.
 
