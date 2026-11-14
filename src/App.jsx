@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { SITES, findSite } from './data/sites.js'
 import { clearances, metricsAt } from './lib/scenario.js'
 import { useHorizon, useSeries } from './lib/useSeries.js'
+import { parseTerrainFile, quickTerrain } from './lib/quickTerrain.js'
 import { Panorama, Timeline } from './components/Charts.jsx'
-import { Compare, DatePlanner, MetricCards, MoonVsEarth, SitePicker, fmtUTC } from './components/Panels.jsx'
+import { Compare, DatePlanner, MetricCards, MoonVsEarth, SitePicker, TerrainPanel, fmtUTC } from './components/Panels.jsx'
 
 const DAYS = 30
 const STEP_MIN = 30
@@ -27,9 +28,50 @@ export default function App() {
   const [playing, setPlaying] = useState(false)
   const [scenarios, setScenarios] = useState([])
 
+  // Terrain for custom coordinates: quick (browser tiles) or precise (imported from the offline kit).
+  const [customTerrain, setCustomTerrain] = useState(null)
+  const [terrainState, setTerrainState] = useState({ status: 'idle' })
+  const terrainRun = useRef(0)
+
+  const runQuickTerrain = useCallback((lat, lon) => {
+    const run = ++terrainRun.current
+    setTerrainState({ status: 'loading', done: 0, total: 0, bytes: 0 })
+    quickTerrain(lat, lon, (done, total, bytes) => {
+      if (run === terrainRun.current) setTerrainState({ status: done === total ? 'computing' : 'loading', done, total, bytes })
+    })
+      .then((t) => {
+        if (run !== terrainRun.current) return
+        setCustomTerrain(t)
+        setTerrainState({ status: 'ready' })
+      })
+      .catch((e) => run === terrainRun.current && setTerrainState({ status: 'error', error: e.message }))
+  }, [])
+
+  // Auto-run quick terrain (debounced) whenever custom coordinates change, unless a precise profile for them is loaded.
+  useEffect(() => {
+    if (siteId !== 'custom') return
+    const same = customTerrain && Math.abs(customTerrain.site.lat - coords.lat) < 1e-6 && Math.abs(customTerrain.site.lon - coords.lon) < 1e-6
+    if (same) return
+    const id = setTimeout(() => runQuickTerrain(coords.lat, coords.lon), 600)
+    return () => clearTimeout(id)
+  }, [siteId, coords.lat, coords.lon, customTerrain, runQuickTerrain])
+
+  const importTerrain = (text) => {
+    try {
+      const t = parseTerrainFile(text)
+      terrainRun.current++ // cancel any quick run in flight
+      setSiteId('custom')
+      setCoords({ lat: t.site.lat, lon: t.site.lon })
+      setCustomTerrain(t)
+      setTerrainState({ status: 'ready' })
+    } catch (e) {
+      setTerrainState({ status: 'error', error: e.message })
+    }
+  }
+
   const site = findSite(siteId)
   const series = useSeries(siteId, coords.lat, coords.lon, landing, DAYS, STEP_MIN)
-  const horizon = useHorizon(siteId, mask)
+  const horizon = useHorizon(siteId, mask, siteId === 'custom' ? customTerrain : null)
   const clr = useMemo(() => clearances(series, horizon), [series, horizon])
   const m = useMemo(() => metricsAt(series, index, horizon, 14, clr), [series, index, horizon, clr])
   const now = series.t[index]
@@ -61,6 +103,7 @@ export default function App() {
         key: `${Date.now()}-${Math.random()}`,
         label: site ? site.name : 'Custom site',
         siteId, lat: coords.lat, lon: coords.lon, landing: at, mask,
+        terrain: siteId === 'custom' ? customTerrain : null,
       },
     ])
   }
@@ -68,6 +111,7 @@ export default function App() {
     setSiteId(s.siteId)
     setCoords({ lat: s.lat, lon: s.lon })
     setMask(s.mask)
+    if (s.terrain) setCustomTerrain(s.terrain)
     chooseLanding(s.landing)
   }
 
@@ -101,6 +145,8 @@ export default function App() {
             landing={landing} onLanding={chooseLanding}
             mask={mask} onMask={setMask} terrain={horizon.info}
           />
+          <TerrainPanel siteId={siteId} lat={coords.lat} lon={coords.lon} info={horizon.info}
+            state={terrainState} onQuick={() => runQuickTerrain(coords.lat, coords.lon)} onImport={importTerrain} />
           <div className="panel quick">
             <h3>Quick picks</h3>
             <div className="chips">

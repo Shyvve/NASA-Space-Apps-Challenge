@@ -46,8 +46,17 @@ Coordinates: flown missions use published landing points (LROC, NAIF for IM-2). 
 areas without center points, so Shackleton rim, Malapert and Nobile are the best-lit LOLA points near those features
 (`scripts/scan-illumination.mjs`).
 
-**Limitations:** custom coordinates use a flat horizon (no DEM in the browser). Near-field relief smaller than the DEM pixel
-(boulders, small craters) is not modelled; use the margin slider for that.
+### Terrain for custom coordinates: two modes
+
+| Mode | Where it runs | Data | Accuracy vs full resolution |
+| --- | --- | --- | --- |
+| **1 · Quick** | In the browser, automatic | Only the LOLA tiles around the point (`public/dem/`): 80 m / 240 m near the south pole, 480 m → 1.9 km farther out, 3.8 km elsewhere. Typically 0.3–3 MB | RMS 0.02–0.04° within ~85 km of the pole, up to ~1° elsewhere (`node scripts/validate-quick.mjs`) |
+| **2 · Precise** | Offline kit on your computer (`public/kit/lunar-horizon-kit.mjs`, Node 18+, no install) | Downloads full LOLA DEMs from NASA PDS once (33–180 MB) | Identical to the curated-site profiles |
+
+Precise mode: download the kit from the Terrain panel, run `node lunar-horizon-kit.mjs <lat> <lon> --out horizon.json`,
+then import `horizon.json` on the site. The kit is generated from the same `src/lib/horizonCore.js` as the browser (`npm run kit`).
+
+**Limitations:** relief smaller than the DEM pixel (boulders, small craters) is not modelled; use the margin slider for that.
 
 ## Run
 
@@ -63,6 +72,8 @@ npm run build           # production build into dist/
 npm run fetch-horizons  # re-download Horizons tables
 npm run validate        # compare in-browser model vs Horizons
 npm run terrain         # recompute horizon profiles (needs the DEMs in data-raw/)
+npm run tiles           # rebuild browser terrain tiles (needs the DEMs in data-raw/)
+npm run kit             # rebuild the offline kit from src/lib/horizonCore.js
 ```
 
 To recompute terrain, download `ldem_80s_80m.img`, `ldem_75s_240m.img` (polar/img) and `ldem_16.img` (cylindrical/img) from the

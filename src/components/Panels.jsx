@@ -1,7 +1,8 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { SITES } from '../data/sites.js'
 import { EARTH_RADIUS_DEG, SUN_RADIUS_DEG, clearances, formatDuration, metricsAt } from '../lib/scenario.js'
 import { useHorizon, useSeries } from '../lib/useSeries.js'
+import { quickAccuracy } from '../lib/quickTerrain.js'
 
 const DAY = 86400000
 const groups = [...new Set(SITES.map((s) => s.group))]
@@ -179,7 +180,7 @@ export function DatePlanner({ siteId, lat, lon, landing, onPick, horizon }) {
 
 function CompareRow({ s, onRemove, onLoad }) {
   const series = useSeries(s.siteId, s.lat, s.lon, s.landing, 14, 30)
-  const horizon = useHorizon(s.siteId, s.mask)
+  const horizon = useHorizon(s.siteId, s.mask, s.terrain)
   const m = useMemo(() => metricsAt(series, 0, horizon, 14), [series, horizon])
   const v = verdict(m)
   return (
@@ -266,6 +267,88 @@ export function MoonVsEarth({ lat, m }) {
           <div className="big mono">−170…+120 °C</div>
           <p>Typical surface temperature swing between lunar night and day. Losing sunlight means losing heat as well as power.</p>
         </div>
+      </div>
+    </div>
+  )
+}
+
+const KIT_URL = `${import.meta.env.BASE_URL}kit/lunar-horizon-kit.mjs`
+
+/**
+ * Terrain source for the current site. Curated sites have precomputed full-resolution profiles;
+ * custom coordinates offer two modes: quick (in the browser) and precise (offline kit + import).
+ */
+export function TerrainPanel({ siteId, lat, lon, info, state, onQuick, onImport }) {
+  const [copied, setCopied] = useState(false)
+  const cmd = `node lunar-horizon-kit.mjs ${lat} ${lon} --out horizon.json`
+  if (siteId !== 'custom') {
+    return (
+      <div className="panel terrain">
+        <h3>Terrain</h3>
+        <p className="muted small">
+          {info
+            ? `Precomputed full-resolution LOLA horizon (${info.resolutionM} m/px near the site). Surface ${info.elevationM.toLocaleString('en-US')} m.`
+            : 'Loading terrain…'}
+        </p>
+        <p className="muted small">Enter custom coordinates to compute terrain for any point on the Moon.</p>
+      </div>
+    )
+  }
+  const mismatch = info && (Math.abs(info.site.lat - lat) > 0.01 || Math.abs(info.site.lon - lon) > 0.01)
+  return (
+    <div className="panel terrain">
+      <h3>Terrain for custom coordinates</h3>
+      {state.status === 'error' && <p className="warn small" role="alert">Terrain failed: {state.error}</p>}
+      <div className={`terrain-status ${state.status === 'loading' || state.status === 'computing' ? state.status : info ? info.mode : 'idle'}`}>
+        {state.status === 'loading' && <>Downloading LOLA tiles… {state.done}/{state.total} ({(state.bytes / 1e6).toFixed(1)} MB)</>}
+        {state.status === 'computing' && <>Ray-tracing 720 directions…</>}
+        {!info && state.status !== 'loading' && state.status !== 'computing' && <>Flat horizon (no terrain yet)</>}
+        {info && state.status !== 'loading' && state.status !== 'computing' && (
+          <>
+            <b>{info.mode === 'precise' ? 'Precise' : 'Quick'} terrain</b>: {info.resolutionM} m/px at the site, surface{' '}
+            {info.elevationM.toLocaleString('en-US')} m
+            {info.mode === 'quick' && info.download && <> · {(info.download.bytes / 1e6).toFixed(1)} MB downloaded</>}
+          </>
+        )}
+      </div>
+      {mismatch && <p className="warn small">This profile was computed for {info.site.lat}, {info.site.lon}, not the current coordinates.</p>}
+
+      <div className="mode">
+        <div className="mode-head">
+          <b>1 · Quick</b>
+          <span className="muted small">in the browser, ~0.3–3 MB</span>
+        </div>
+        <p className="muted small">Downloads only the LOLA tiles around the point: fine near the site, coarse far away. Accuracy {quickAccuracy(lat)}. Runs automatically when you change the coordinates.</p>
+        <button onClick={onQuick} disabled={state.status === 'loading' || state.status === 'computing'}>Recompute quick terrain</button>
+      </div>
+
+      <div className="mode">
+        <div className="mode-head">
+          <b>2 · Precise</b>
+          <span className="muted small">offline kit, full resolution</span>
+        </div>
+        <ol className="steps small">
+          <li><a href={KIT_URL} download="lunar-horizon-kit.mjs">Download the offline kit</a> (one file, needs Node.js 18+).</li>
+          <li>
+            Run it. The first run downloads full LOLA DEMs from NASA (33–180 MB):
+            <div className="cmd">
+              <code>{cmd}</code>
+              <button className="icon" title="Copy command" onClick={() => {
+                navigator.clipboard?.writeText(cmd).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }).catch(() => {})
+              }}>{copied ? '✓' : '⧉'}</button>
+            </div>
+          </li>
+          <li>
+            <label className="file-btn">
+              Import horizon.json
+              <input type="file" accept=".json,application/json" onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) file.text().then(onImport)
+                e.target.value = ''
+              }} />
+            </label>
+          </li>
+        </ol>
       </div>
     </div>
   )

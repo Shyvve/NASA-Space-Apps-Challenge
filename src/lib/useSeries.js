@@ -42,10 +42,12 @@ function loadTerrain(siteId) {
 }
 
 /**
- * Local horizon for a site: LOLA terrain profile (curated sites only) plus a uniform extra margin in degrees.
- * Returns { terrain, azStep, extra, info } where info has the DEM metadata (or null for custom coordinates).
+ * Local horizon for a site: LOLA terrain profile plus a uniform extra margin in degrees.
+ * Curated sites use the precomputed full-resolution profile; custom coordinates use `customTerrain`
+ * (computed in the browser, or imported from the offline kit), or a flat horizon if there is none.
+ * Returns { terrain, azStep, extra, info } where info is the terrain JSON (or null).
  */
-export function useHorizon(siteId, extra) {
+export function useHorizon(siteId, extra, customTerrain = null) {
   const [state, setState] = useState({ id: null, data: null })
   useEffect(() => {
     let alive = true
@@ -58,7 +60,7 @@ export function useHorizon(siteId, extra) {
       alive = false
     }
   }, [siteId])
-  const data = state.id === siteId ? state.data : null
+  const data = siteId === 'custom' ? customTerrain : state.id === siteId ? state.data : null
   return useMemo(
     () => ({ terrain: data ? data.mask : null, azStep: data ? data.azStep : 1, extra, info: data }),
     [data, extra],
