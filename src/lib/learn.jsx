@@ -1,4 +1,4 @@
-// "Learn" mode: simpler words, an explanation under every panel, and how the panels connect.
+// "Learn" mode: simpler words and expandable explanations (closed until clicked). Hidden in Expert mode.
 import { createContext, useContext } from 'react'
 
 export const LearnContext = createContext(false)
@@ -10,25 +10,29 @@ export function useWords() {
   return (expert, simple) => (learn ? simple : expert)
 }
 
-/** Explanation box, shown only in Learn mode. `links` = [{ id, label }] of related panels. */
-export function Explain({ title = 'What is this?', children, links }) {
+/** Expandable explanation. `links` = [{ id, label }] of related panels (scrolls / switches to them). */
+export function Hint({ title = 'What is this?', children, links }) {
   const learn = useLearn()
   if (!learn) return null
   return (
-    <div className="explain">
-      <div className="explain-title">💡 {title}</div>
-      <div className="explain-body">{children}</div>
-      {links?.length > 0 && (
-        <div className="explain-links">
-          Connected to:{' '}
-          {links.map((l, i) => (
-            <span key={l.id}>
-              {i > 0 && ' · '}
-              <a href={`#${l.id}`} onClick={(e) => { e.preventDefault(); document.getElementById(l.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }}>{l.label}</a>
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
+    <details className="hint">
+      <summary><span className="hint-q">?</span>{title}</summary>
+      <div className="hint-body">
+        {children}
+        {links?.length > 0 && (
+          <div className="hint-links">
+            Connected to:{' '}
+            {links.map((l, i) => (
+              <span key={l.id}>
+                {i > 0 && ' · '}
+                <a href={`#${l.id}`} onClick={(e) => { e.preventDefault(); window.dispatchEvent(new CustomEvent('reveal-panel', { detail: l.id })) }}>{l.label}</a>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </details>
   )
 }
+
+export const Explain = Hint

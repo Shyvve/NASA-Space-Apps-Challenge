@@ -1,0 +1,20 @@
+# Cloudflare Worker for the AI assistant.
+# Deploy:  cd worker && npx wrangler login && npx wrangler secret put OPENAI_API_KEY && npx wrangler deploy
+name = "lunar-navigator-assistant"
+main = "index.js"
+compatibility_date = "2025-09-01"
+
+[vars]
+# Websites allowed to use this proxy (comma-separated, exact origins).
+ALLOWED_ORIGINS = "https://shyvve.github.io,http://localhost:5173,http://localhost:4173"
+MODEL = "gpt-5-mini"
+REASONING = "low"
+
+# 20 questions per minute per visitor IP.
+[[ratelimits]]
+name = "LIMITER"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 20
+  period = 60

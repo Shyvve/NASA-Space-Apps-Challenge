@@ -23,10 +23,15 @@ export function Tour({ open, onClose }) {
 
   useLayoutEffect(() => {
     if (!open) return
-    const el = document.getElementById(s.id)
-    if (!el) return
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    const update = () => setRect(el.getBoundingClientRect())
+    // Panels on the right live in tabs: ask the app to show this one first.
+    window.dispatchEvent(new CustomEvent('reveal-panel', { detail: s.id }))
+    let scrolled = false
+    const update = () => {
+      const el = document.getElementById(s.id)
+      if (!el) return
+      if (!scrolled) { el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); scrolled = true }
+      setRect(el.getBoundingClientRect())
+    }
     update()
     const id = setInterval(update, 100)
     window.addEventListener('resize', update)

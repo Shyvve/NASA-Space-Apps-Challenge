@@ -6,7 +6,8 @@ import { RelayPanel } from './components/Relay.jsx'
 import { useHorizon, useSeries } from './lib/useSeries.js'
 import { hasLocalPrecise, preciseTerrain, quickTerrain } from './lib/quickTerrain.js'
 import { exportSeriesCSV, printReport } from './lib/export.js'
-import { Explain, LearnContext } from './lib/learn.jsx'
+import { Hint, LearnContext } from './lib/learn.jsx'
+import { Assistant } from './components/Assistant.jsx'
 import { Panorama, Timeline } from './components/Charts.jsx'
 import { Compare, DatePlanner, MetricCards, MoonVsEarth, SitePicker, TerrainPanel, fmtUTC, verdict } from './components/Panels.jsx'
 import { MoonMap } from './components/MoonMap.jsx'
@@ -19,6 +20,8 @@ const DAYS = 30
 const STEP_MIN = 30
 const HOUR = 3600000
 const REPO_URL = 'https://github.com/Shyvve/NASA-Space-Apps-Challenge'
+const DEFAULT_POWER = { area: 2, eff: 30, mount: 'tracking', facing: 0, load: 60 }
+const PANEL_TAB = { 'scene-panel': '3d', 'relay-panel': 'comms', 'power-panel': 'power', 'planner-panel': 'dates', 'illum-panel': 'light', 'compare-panel': 'compare', 'facts-panel': 'about' }
 
 function startOfUTCHour(d) {
   const t = new Date(d)
@@ -61,7 +64,7 @@ export default function App() {
   const [learn, setLearn] = useState(initial.learn ?? false)
   const [tour, setTour] = useState(false)
   const [toast, setToast] = useState(null)
-  const [powerCfg, setPowerCfg] = useState({ area: 2, eff: 30, mount: 'tracking', facing: 0, load: 60 })
+  const [powerCfg, setPowerCfg] = useState(DEFAULT_POWER)
   const [relayId, setRelayId] = useState(initial.relay ?? 'none')
   const w = (expert, simple) => (learn ? simple : expert)
 
@@ -187,31 +190,88 @@ export default function App() {
   }
   const label = site ? site.name : 'Custom site'
 
+  const resetAll = () => {
+    terrainRun.current++
+    const s = findSite('connecting-ridge')
+    setSiteId('connecting-ridge')
+    setCoords({ lat: s.lat, lon: s.lon })
+    setLanding(startOfUTCHour(new Date()))
+    setIndex(0)
+    setMask(0)
+    setPlaying(false)
+    setScenarios([])
+    setRelayId('none')
+    setPowerCfg(DEFAULT_POWER)
+    setCustomTerrain(null)
+    setTerrainState({ status: 'idle' })
+    setTab('3d')
+    flash('Settings reset')
+  }
+
+  // Panels on the right live in tabs; links / tour steps ask to reveal a panel by id.
+  const [tab, setTab] = useState('3d')
+  useEffect(() => {
+    const onReveal = (e) => {
+      const t = PANEL_TAB[e.detail]
+      if (t) setTab(t)
+      setTimeout(() => document.getElementById(e.detail)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 60)
+    }
+    window.addEventListener('reveal-panel', onReveal)
+    return () => window.removeEventListener('reveal-panel', onReveal)
+  }, [])
+
+  const [menu, setMenu] = useState(false)
+  useEffect(() => {
+    if (!menu) return
+    const close = (e) => { if (!e.target.closest('.menu-wrap')) setMenu(false) }
+    window.addEventListener('pointerdown', close)
+    return () => window.removeEventListener('pointerdown', close)
+  }, [menu])
+  const menuItem = (text, fn) => <button role="menuitem" onClick={() => { setMenu(false); fn() }}>{text}</button>
+
+  const assistantContext = {
+    site: label, lat: +coords.lat.toFixed(4), lon: +coords.lon.toFixed(4), note: site?.note,
+    landingUTC: landing.toISOString(), viewedUTC: new Date(now).toISOString(),
+    status: verdict(m).text, sunElevationDeg: +m.sunEl.toFixed(2), sunAzimuthDeg: +m.sunAz.toFixed(1), terrainHorizonTowardSunDeg: +m.sunHorizon.toFixed(2),
+    earthElevationDeg: +m.earthEl.toFixed(2), terrainHorizonTowardEarthDeg: +m.earthHorizon.toFixed(2),
+    hoursToSunChange: m.sunFlipHours && +m.sunFlipHours.toFixed(1), hoursToEarthChange: m.earthFlipHours && +m.earthFlipHours.toFixed(1),
+    next14days: { sunlitPct: Math.round(m.sunPct), earthVisiblePct: Math.round(m.earthPct), bothPct: Math.round(m.bothPct), longestNightHours: Math.round(m.longestDarkHours) },
+    relay: relayId === 'none' ? 'none' : RELAYS[relayId].name, anyLinkPct14d: Math.round(comms.anyPct),
+    terrain: horizon.info ? `${horizon.info.mode || 'precomputed'} LOLA, ${horizon.info.resolutionM} m/px, surface ${horizon.info.elevationM} m` : 'flat (none)',
+    solarPanel: { ...powerCfg, nowW: Math.round(power[safeIndex]) },
+    mode: learn ? 'Learn (beginner, use simple words)' : 'Expert',
+  }
+
+  const TABS = [
+    ['3d', '3D'], ['comms', 'Comms'], ['power', 'Power'], ['dates', 'Dates'], ['light', 'Light'], ['compare', `Compare${scenarios.length ? ` ${scenarios.length}` : ''}`], ['about', 'About'],
+  ]
+
   return (
     <LearnContext.Provider value={learn}>
       <div className={`app ${learn ? 'learn' : ''}`}>
         <header className="top">
           <div className="brand">
-            <svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true">
-              <circle cx="16" cy="16" r="13" fill="#d9d4c7" />
-              <circle cx="11" cy="12" r="3" fill="#b5ae9e" />
-              <circle cx="20" cy="19" r="4" fill="#b5ae9e" />
-            </svg>
-            <div>
-              <h1>Lunar Landing Site Navigator</h1>
-              <p>{w('Where and when to land so you keep power and a line to Earth.', 'Find a place and a day on the Moon where a lander gets sunlight and can call home.')}</p>
-            </div>
+            <span className="logo">LUNAR NAVIGATOR</span>
+            <span className="tag">{w('landing site · sun · earth', 'where and when to land on the Moon')}</span>
           </div>
-          <div className="tools">
+          <div className="top-right">
             <div className="seg" role="group" aria-label="Explanation level">
               <button className={!learn ? 'on' : ''} onClick={() => setLearn(false)}>Expert</button>
               <button className={learn ? 'on' : ''} onClick={() => setLearn(true)}>Learn</button>
             </div>
-            <button onClick={() => { setLearn(true); setTour(true) }}>Take the tour</button>
-            <button onClick={shareLink}>Share link</button>
-            <button onClick={() => exportSeriesCSV({ label, lat: coords.lat, lon: coords.lon, series, clr, horizon, power, relay, relayClr })}>Export CSV</button>
-            <button onClick={printReport}>Print / PDF</button>
-            <a className="btn" href={REPO_URL} target="_blank" rel="noreferrer">⬇ Download app</a>
+            <button className="ghost" onClick={resetAll} title="Reset all settings">Reset</button>
+            <div className="menu-wrap">
+              <button className="ghost" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((v) => !v)}>Menu</button>
+              {menu && (
+                <div className="menu" role="menu">
+                  {menuItem('Take the tour', () => { setLearn(true); setTour(true) })}
+                  {menuItem('Copy share link', shareLink)}
+                  {menuItem('Export data (CSV)', () => exportSeriesCSV({ label, lat: coords.lat, lon: coords.lon, series, clr, horizon, power, relay, relayClr }))}
+                  {menuItem('Print / save PDF', printReport)}
+                  <a role="menuitem" href={REPO_URL} target="_blank" rel="noreferrer" onClick={() => setMenu(false)}>Download the app (GitHub)</a>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
@@ -220,8 +280,8 @@ export default function App() {
           <p>Landing {fmtUTC(landing.getTime())} · shown at {fmtUTC(now)} · status: {verdict(m).text}</p>
         </div>
 
-        <main className="layout">
-          <aside>
+        <main className="dash">
+          <aside className="col col-left">
             <SitePicker
               siteId={siteId} lat={coords.lat} lon={coords.lon}
               onSite={chooseSite} onCoords={setCustomCoords}
@@ -230,97 +290,90 @@ export default function App() {
             />
             <TerrainPanel siteId={siteId} lat={coords.lat} lon={coords.lon} info={horizon.info} state={terrainState}
               localPrecise={localPrecise} onQuick={() => runQuickTerrain(coords.lat, coords.lon)} onPrecise={() => runPreciseTerrain(coords.lat, coords.lon)} />
-            <div className="panel quick">
-              <h3>Quick picks</h3>
-              <div className="chips">
-                {['apollo11', 'im1', 'chandrayaan3', 'shackleton', 'malapert', 'change4'].map((id) => (
-                  <button key={id} className={id === siteId ? 'chip on' : 'chip'} onClick={() => chooseSite(id)}>
-                    {findSite(id).name}
-                  </button>
-                ))}
-              </div>
-              <p className="muted small">{SITES.length} curated sites have JPL Horizons data for Nov 2026 to Dec 2027. Other dates and points are computed in the browser.</p>
-            </div>
+            <MoonMap lat={coords.lat} lon={coords.lon} siteId={siteId} onPick={setCustomCoords} onSite={chooseSite} />
           </aside>
 
-          <section className="content">
+          <section className="col col-mid">
             <div className="site-line">
-              <b>{label}</b>
-              <span className="mono">{coords.lat.toFixed(4)}°, {coords.lon.toFixed(4)}°E</span>
-              {site && <span className="muted">{site.note}</span>}
-              {horizon.info && <span className="muted small">Surface {horizon.info.elevationM.toLocaleString('en-US')} m</span>}
+              <span className="site-name">{label}</span>
+              <span className="mono muted">{coords.lat.toFixed(4)}°, {coords.lon.toFixed(4)}°E{horizon.info ? ` · ${horizon.info.elevationM.toLocaleString('en-US')} m` : ''}</span>
+              {site && <span className="muted small">{site.note}</span>}
             </div>
 
             <MetricCards m={m} source={series.sources.includes('horizons') ? 'horizons' : 'engine'} />
 
-            <MoonMap lat={coords.lat} lon={coords.lon} siteId={siteId} onPick={setCustomCoords} onSite={chooseSite} />
-
             <div className="panel" id="sky-panel">
               <div className="panel-head">
-                <h2>{w('Sky at the site', 'Look around from the lander')}</h2>
-                <p>
-                  {w('Full 360° view of the horizon at', 'Everything you would see turning around once, at')} <b className="mono">{fmtUTC(now)}</b>.{' '}
-                  {w(`The faint lines are the paths of the Sun and Earth over the next ${DAYS} days.`, `The thin lines show where the Sun and Earth will move over the next ${DAYS} days.`)}
-                </p>
+                <h2>{w('Sky at the site', 'Look around')}</h2>
+                <span className="mono muted small">{fmtUTC(now)}</span>
+                <div className="legend">
+                  <span><i className="dot-ico sun" /> Sun</span>
+                  <span><i className="dot-ico earth" /> Earth</span>
+                  {relay && <span><i className="dot-ico relay" /> {RELAYS[relayId].short}</span>}
+                </div>
+                <Hint title="How to read this picture" links={[{ id: 'status-cards', label: 'Status' }, { id: 'scene-panel', label: '3D view' }]}>
+                  <p>Imagine standing at the landing site and turning around once. Left to right is the direction (N, E, S, W), up is how high in the sky, in degrees. The grey shape at the bottom is the real outline of the mountains around you, measured by NASA's LOLA laser.</p>
+                  <p>The yellow disk is the Sun, the blue one is Earth, and the thin lines show where they will move over the next {DAYS} days. On the Moon there is no air, so there is no twilight: if the Sun is above the mountains you get full sunlight, and the moment it dips behind them it is completely dark.</p>
+                </Hint>
               </div>
               <Panorama series={series} index={safeIndex} horizon={horizon} relay={relay} />
-              <div className="legend">
-                <span><i className="dot-ico sun" /> Sun</span>
-                <span><i className="dot-ico earth" /> Earth</span>
-                {relay && <span><i className="dot-ico relay" /> Relay ({RELAYS[relayId].short})</span>}
-                <span><i className="dot-ico ground" /> {w('Below horizon: no power / no direct link', 'Hidden by mountains: no power / no contact')}</span>
-              </div>
-              <Explain title="How to read this picture" links={[{ id: 'status-cards', label: 'Status' }, { id: 'scene-panel', label: '3D view' }, { id: 'map-panel', label: 'Map' }]}>
-                <p>Imagine standing at the landing site and turning around once. Left to right is the direction (N, E, S, W), up is how high in the sky. The grey shape at the bottom is the real outline of the mountains around you.</p>
-                <p>On the Moon there is no air, so there is no twilight and no blue sky: if the Sun is above the mountains you have full sunlight, if it dips behind them it is instantly dark.</p>
-              </Explain>
             </div>
 
             <div className="panel" id="timeline-panel">
               <div className="panel-head">
-                <h2>{w('Mission timeline', 'What happens over the next month')}</h2>
-                <p>{w(`Elevation over ${DAYS} days after landing. Drag across the chart to move in time.`, 'Drag across the chart to travel in time. The coloured bars show when the Sun and Earth are visible.')}</p>
+                <h2>{w('Timeline', 'The next month')}</h2>
                 <div className="transport">
                   <button className="primary" onClick={() => setPlaying((p) => !p)}>{playing ? 'Pause' : 'Play'}</button>
                   <button onClick={() => setIndex((i) => Math.max(0, i - 2 * (60 / STEP_MIN) * 6))}>−12 h</button>
                   <button onClick={() => setIndex((i) => Math.min(series.t.length - 1, i + 2 * (60 / STEP_MIN) * 6))}>+12 h</button>
                   <button onClick={() => setIndex(0)}>Landing</button>
-                  <span className="mono muted">T+{((now - landing.getTime()) / HOUR / 24).toFixed(1)} d</span>
+                  <span className="mono muted small">T+{((now - landing.getTime()) / HOUR / 24).toFixed(1)} d</span>
                 </div>
+                <Hint title="Why does it change so slowly?" links={[{ id: 'planner-panel', label: 'Date planner' }, { id: 'power-panel', label: 'Power' }]}>
+                  <p>The Moon spins very slowly: one full day and night takes 29.5 Earth days, so the Sun crawls across the sky and a "night" lasts about two weeks near the equator.</p>
+                  <p>Solid lines are how high the Sun (yellow) and Earth (blue) are. Dashed lines are the mountain height in their direction: when a solid line drops below its dashed line, that body is hidden. The coloured bars at the bottom show when each one is visible. Drag across the chart to travel in time, or press Play.</p>
+                </Hint>
               </div>
               <Timeline series={series} index={safeIndex} horizon={horizon} clr={clr} relayClr={relayClr} onScrub={(k) => { setPlaying(false); setIndex(k) }} start={landing} />
-              <Explain title="Why does it change so slowly?" links={[{ id: 'planner-panel', label: 'Date planner' }, { id: 'power-panel', label: 'Power' }]}>
-                <p>The Moon spins very slowly: one full day-and-night takes 29.5 Earth days. So the Sun crawls across the sky. The dashed lines are the mountain height in the direction of the Sun and Earth: when a solid line drops below its dashed line, that body is hidden.</p>
-              </Explain>
             </div>
+          </section>
 
-            <Scene3D lat={coords.lat} lon={coords.lon} sun={{ az: m.sunAz, el: m.sunEl }} earth={{ az: m.earthAz, el: m.earthEl }} />
-
-            <RelayPanel relayId={relayId} onRelay={setRelayId} relay={relay} clr={clr} relayClr={relayClr} comms={comms} series={series} index={safeIndex} />
-
-            <PowerPanel series={series} clr={clr} index={safeIndex} cfg={powerCfg} onCfg={setPowerCfg} />
-
-            <DatePlanner siteId={siteId} lat={coords.lat} lon={coords.lon} landing={landing} onPick={chooseLanding} horizon={horizon} />
-
-            <IllumMap lat={coords.lat} lon={coords.lon} start={landing} onPick={setCustomCoords} />
-
-            <Compare scenarios={scenarios} onAdd={pin} onLoad={loadScenario}
-              onRemove={(key) => setScenarios((l) => l.filter((s) => s.key !== key))} />
-
-            <MoonVsEarth lat={coords.lat} m={m} />
-
-            <footer className="foot">
-              <p>
-                Ephemerides: <a href="https://ssd.jpl.nasa.gov/horizons/" target="_blank" rel="noreferrer">JPL Horizons</a> (DE441, airless apparent, pre-downloaded for curated sites)
-                and an in-browser model (astronomy-engine + IAU lunar rotation model with libration), which agrees with Horizons to within 0.004° (RMS 0.001°).
-                Terrain: horizon profiles ray-traced to 300 km through <a href="https://pds-geosciences.wustl.edu/missions/lro/lola.htm" target="_blank" rel="noreferrer">LOLA</a> DEMs, observer 2 m above ground.
-                Shackleton rim, Malapert and Nobile are the best-lit LOLA points near those features; NASA does not publish center points for Artemis III regions.
-              </p>
-              <p>Built for the NASA Space Apps Challenge 2026: Lunar Landing Site Navigator · <a href={REPO_URL} target="_blank" rel="noreferrer">Source on GitHub</a></p>
-            </footer>
+          <section className="col col-right">
+            <div className="tabs" role="tablist">
+              {TABS.map(([k, l]) => (
+                <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>
+              ))}
+            </div>
+            <div className="tab-body">
+              {tab === '3d' && <Scene3D lat={coords.lat} lon={coords.lon} sun={{ az: m.sunAz, el: m.sunEl }} earth={{ az: m.earthAz, el: m.earthEl }} />}
+              {tab === 'comms' && <RelayPanel relayId={relayId} onRelay={setRelayId} relay={relay} clr={clr} relayClr={relayClr} comms={comms} series={series} index={safeIndex} />}
+              {tab === 'power' && <PowerPanel series={series} clr={clr} index={safeIndex} cfg={powerCfg} onCfg={setPowerCfg} />}
+              {tab === 'dates' && <DatePlanner siteId={siteId} lat={coords.lat} lon={coords.lon} landing={landing} onPick={chooseLanding} horizon={horizon} />}
+              {tab === 'light' && <IllumMap lat={coords.lat} lon={coords.lon} start={landing} onPick={setCustomCoords} />}
+              {tab === 'compare' && (
+                <Compare scenarios={scenarios} onAdd={pin} onLoad={loadScenario}
+                  onRemove={(key) => setScenarios((l) => l.filter((s) => s.key !== key))} />
+              )}
+              {tab === 'about' && (
+                <>
+                  <MoonVsEarth lat={coords.lat} m={m} />
+                  <footer className="foot panel">
+                    <p>
+                      Ephemerides: <a href="https://ssd.jpl.nasa.gov/horizons/" target="_blank" rel="noreferrer">JPL Horizons</a> (DE441, airless apparent, pre-downloaded for curated sites)
+                      and an in-browser model (astronomy-engine + IAU lunar rotation model with libration), which agrees with Horizons to within 0.004° (RMS 0.001°).
+                      Terrain: horizon profiles ray-traced to 300 km through <a href="https://pds-geosciences.wustl.edu/missions/lro/lola.htm" target="_blank" rel="noreferrer">LOLA</a> DEMs, observer 2 m above ground.
+                      Shackleton rim, Malapert and Nobile are the best-lit LOLA points near those features; NASA does not publish center points for Artemis III regions.
+                      Relay orbits are simplified models.
+                    </p>
+                    <p>NASA Space Apps Challenge 2026 · Lunar Landing Site Navigator · <a href={REPO_URL} target="_blank" rel="noreferrer">GitHub</a></p>
+                  </footer>
+                </>
+              )}
+            </div>
           </section>
         </main>
         <Tour open={tour} onClose={() => setTour(false)} />
+        <Assistant context={assistantContext} />
         {toast && <div className="toast" role="status">{toast}</div>}
       </div>
     </LearnContext.Provider>

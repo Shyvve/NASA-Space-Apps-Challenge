@@ -26,6 +26,23 @@ The downloaded version works like the website, plus **one-click precise terrain*
 4. Choose **Custom coordinates** (or click the map) and press **Make it precise** in the Terrain panel.
    The first time it downloads NASA's full-resolution LOLA maps (33–180 MB, depending on the place) into `data-raw/`, then every point takes about a second.
 
+## AI assistant (online site)
+
+The round **AI** button (bottom-right) is a chat assistant ("Luna") that knows the Moon basics, the missions and the current view.
+The OpenAI key must never be in the website code (anyone could read it), so the site talks to a tiny proxy on Cloudflare Workers (`worker/`) that keeps the key as a secret.
+
+One-time setup (free Cloudflare account):
+
+1. `cd worker`
+2. `npx wrangler login`
+3. `npx wrangler secret put OPENAI_API_KEY` and paste your key when asked (it is stored only on Cloudflare).
+4. `npx wrangler deploy`. It prints the worker URL, e.g. `https://lunar-navigator-assistant.<name>.workers.dev`.
+5. On GitHub: **Settings → Secrets and variables → Actions → Variables → New repository variable**, name `VITE_AI_ENDPOINT`, value = that URL. Push or re-run the deploy workflow.
+
+The worker only accepts requests from the origins in `worker/wrangler.toml` (`ALLOWED_ORIGINS`), limits each visitor to 20 questions per minute,
+and caps message length. Model and reasoning effort are set there too (`MODEL`, default `gpt-5-mini`). The system prompt and background knowledge are in `worker/knowledge.js`.
+Without `VITE_AI_ENDPOINT` the AI button is hidden.
+
 ## Features
 
 - **Clickable Moon map** (south pole and whole Moon, shaded LOLA relief): click to land anywhere; markers for all curated sites.
