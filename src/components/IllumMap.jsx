@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { sunEarthAt } from '../lib/ephemeris.js'
-import { Explain } from '../lib/learn.jsx'
+import { Explain, Info } from '../lib/learn.jsx'
 
 const N = 9
 const DAY = 86400000
@@ -60,15 +60,16 @@ export function IllumMap({ lat, lon, start, onPick }) {
     <div className="panel" id="illum-panel">
       <div className="panel-head">
         <h2>Light around the site</h2>
-        <p>
-          A {N}×{N} grid, {spacing >= 1000 ? `${spacing / 1000} km` : `${spacing} m`} apart, centred on the site: share of the next 12 months
-          each spot sees the {metric === 'earth' ? 'Earth' : 'Sun'}. Each cell gets its own LOLA horizon (quick mode). Most dramatic near the poles.
-        </p>
         <div className="seg">
           {['sun', 'earth', 'both'].map((k) => (
             <button key={k} className={metric === k ? 'on' : ''} onClick={() => setMetric(k)}>{{ sun: 'Sun', earth: 'Earth', both: 'Both' }[k]}</button>
           ))}
         </div>
+        <Info>
+          A {N}×{N} grid, {spacing >= 1000 ? `${spacing / 1000} km` : `${spacing} m`} apart, centred on the site: share of the next 12 months
+          each spot sees the {metric === 'earth' ? 'Earth' : 'Sun'}. Each cell gets its own LOLA horizon (quick mode). Most dramatic near the poles.
+          North is up, the ring is the site, the star is the best cell; click a cell to move there.
+        </Info>
       </div>
       {state.status === 'idle' && <button className="primary" onClick={run}>Scan the surroundings</button>}
       {state.status === 'running' && (
@@ -100,7 +101,6 @@ export function IllumMap({ lat, lon, start, onPick }) {
             ) : (
               <p className="muted small">This is already the best spot in the grid.</p>
             )}
-            <p className="muted small">N is up. Ring = site, star = best cell. Click a cell to move there.</p>
           </div>
         </div>
       )}

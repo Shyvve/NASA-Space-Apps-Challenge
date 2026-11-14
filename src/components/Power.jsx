@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { SUN_RADIUS_DEG } from '../lib/scenario.js'
-import { Explain } from '../lib/learn.jsx'
+import { Explain, Info } from '../lib/learn.jsx'
 
 export const SOLAR_CONSTANT = 1361 // W/m² at 1 AU, no atmosphere on the Moon
 const RAD = Math.PI / 180
@@ -62,7 +62,7 @@ export function PowerPanel({ series, clr, index, cfg, onCfg }) {
     <div className="panel" id="power-panel">
       <div className="panel-head">
         <h2>Solar power &amp; battery</h2>
-        <p>Output of your solar array over {series.days} days, using the real Sun angle and terrain shadow. No air on the Moon, so sunlight arrives at full strength ({SOLAR_CONSTANT} W/m²).</p>
+        <Info>Output of your solar array over {series.days} days, using the real Sun angle and terrain shadow. No air on the Moon, so sunlight arrives at full strength ({SOLAR_CONSTANT} W/m²).</Info>
       </div>
       <div className="power">
         <div className="power-form">

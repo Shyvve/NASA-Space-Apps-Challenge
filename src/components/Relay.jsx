@@ -1,6 +1,6 @@
 import { RELAYS } from '../lib/relay.js'
 import { formatDuration } from '../lib/scenario.js'
-import { Explain, useWords } from '../lib/learn.jsx'
+import { Explain, Info, useWords } from '../lib/learn.jsx'
 
 const DAY = 86400000
 
@@ -33,10 +33,11 @@ export function RelayPanel({ relayId, onRelay, relay, clr, relayClr, comms, seri
     <div className="panel" id="relay-panel">
       <div className="panel-head">
         <h2>{w('Communications: direct or via relay', 'Calling home: directly or through a satellite')}</h2>
-        <p>
+        <Info>
           {w('Without Earth above the local horizon there is no direct link. A relay satellite that sees both the site and Earth can forward the signal.',
             'If mountains or the Moon itself hide Earth, the lander can send its message to a satellite instead, and the satellite passes it on to Earth.')}
-        </p>
+          {def?.about && <> {def.about} Orbits are simplified models with an arbitrary phase.</>}
+        </Info>
       </div>
       <div className="relay-pick">
         {Object.entries(RELAYS).map(([id, r]) => (
@@ -46,7 +47,6 @@ export function RelayPanel({ relayId, onRelay, relay, clr, relayClr, comms, seri
           </button>
         ))}
       </div>
-      {def?.about && <p className="muted small">{def.about} Orbit is a simplified model with an arbitrary phase.</p>}
       <div className="relay-stats">
         <div><span className="muted small">{w('Direct, next 14 d', 'Direct contact')}</span><b className="mono">{Math.round(comms.directPct)}%</b></div>
         {relayClr && <div><span className="muted small">{w('Relay, next 14 d', 'Through satellite')}</span><b className="mono">{Math.round(comms.relayPct)}%</b></div>}

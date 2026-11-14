@@ -36,3 +36,13 @@ export function Hint({ title = 'What is this?', children, links }) {
 }
 
 export const Explain = Hint
+
+/** Short "what is this panel" note, hidden behind a small (i) button in every mode. */
+export function Info({ children, label = 'About this panel' }) {
+  return (
+    <details className="info">
+      <summary aria-label={label} title={label}>i</summary>
+      <div className="info-body">{children}</div>
+    </details>
+  )
+}

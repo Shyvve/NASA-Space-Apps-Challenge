@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { getDem } from '../lib/quickTerrain.js'
-import { Explain } from '../lib/learn.jsx'
+import { Explain, Info } from '../lib/learn.jsx'
 
 const R = 1737400
 const RAD = Math.PI / 180
@@ -182,14 +182,14 @@ export function Scene3D({ lat, lon, sun, earth }) {
     <div className="panel" id="scene-panel">
       <div className="panel-head">
         <h2>3D view</h2>
-        <p>
-          {(2 * patch.half / 1000).toFixed(0)}×{(2 * patch.half / 1000).toFixed(0)} km of LOLA terrain around the site (pin), lit by the Sun at the selected time
-          {lat > -75 ? ' (coarse 3.8 km data outside the south polar region, so local relief looks flat)' : ''}.
-          Drag to rotate, scroll to zoom. Shadows only come from terrain inside this patch; the panorama above uses 300 km.
-        </p>
         <label className="exag">Height ×{exag}
           <input type="range" min="1" max="5" step="0.5" value={exag} onChange={(e) => setExag(Number(e.target.value))} />
         </label>
+        <Info>
+          {(2 * patch.half / 1000).toFixed(0)}×{(2 * patch.half / 1000).toFixed(0)} km of LOLA terrain around the site (pin), lit by the Sun at the selected time
+          {lat > -75 ? ' (coarse 3.8 km data outside the south polar region, so local relief looks flat)' : ''}.
+          Drag to rotate, scroll to zoom. Shadows only come from terrain inside this patch; the panorama uses 300 km.
+        </Info>
       </div>
       <div className="scene" ref={mount} />
       {status && <div className="scene-status">{status}</div>}

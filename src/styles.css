@@ -376,3 +376,15 @@ td { padding: 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
   .print-only { display: block !important; }
 }
 .print-only { display: none; }
+
+/* ---------------- (i) notes: hidden until clicked, in every mode ---------------- */
+.info { display: inline-block; }
+.info summary { list-style: none; cursor: pointer; width: 17px; height: 17px; border-radius: 50%; border: 1px solid var(--faint); color: var(--muted); display: inline-flex; align-items: center; justify-content: center; font: italic 600 10.5px Georgia, serif; user-select: none; }
+.info summary::-webkit-details-marker { display: none; }
+.info summary:hover, .info[open] summary { color: #000; background: var(--white); border-color: var(--white); }
+.info[open] { flex-basis: 100%; display: block; }
+.info-body { margin-top: 6px; padding: 8px 10px; background: #ffffff08; border-left: 2px solid var(--faint); border-radius: 0 6px 6px 0; color: #cfcfcf; font: 12.5px/1.5 var(--sans); text-transform: none; letter-spacing: 0; }
+.field-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.terrain-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.terrain-head h3 { margin: 0; }
+.best-day { color: var(--muted); margin-left: auto; }

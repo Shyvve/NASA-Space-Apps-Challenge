@@ -3,7 +3,7 @@ import { SITES } from '../data/sites.js'
 import { EARTH_RADIUS_DEG, SUN_RADIUS_DEG, clearances, formatDuration, metricsAt } from '../lib/scenario.js'
 import { useHorizon, useSeries } from '../lib/useSeries.js'
 import { quickAccuracy } from '../lib/quickTerrain.js'
-import { Explain, useWords } from '../lib/learn.jsx'
+import { Explain, Info, useWords } from '../lib/learn.jsx'
 import { downloadText } from '../lib/export.js'
 
 const DAY = 86400000
@@ -59,13 +59,14 @@ export function SitePicker({ siteId, lat, lon, onSite, onCoords, landing, onLand
           onChange={(e) => e.target.value && onLanding(new Date(`${e.target.value}:00Z`))} />
       </label>
       <label className="field">
-        <span>Extra horizon margin: <b>{mask.toFixed(1)}°</b></span>
+        <span className="field-head">Extra horizon margin: <b>{mask.toFixed(1)}°</b>
+          <Info label="About the margin">
+            {terrain
+              ? `Real terrain from LOLA is already included (${terrain.resolutionM} m/px). Add a margin for local boulders, the lander's own structure, or a safety buffer.`
+              : 'No terrain data yet: the horizon is flat. Raise this to approximate nearby ridges and crater walls.'}
+          </Info>
+        </span>
         <input type="range" min="0" max="5" step="0.1" value={mask} onChange={(e) => onMask(Number(e.target.value))} />
-        <small>
-          {terrain
-            ? `Real terrain from LOLA is already included (${terrain.resolutionM} m/px). Add a margin for local boulders, the lander's own structure, or a safety buffer.`
-            : 'No terrain data for custom coordinates: the horizon is flat. Raise this to approximate nearby ridges and crater walls.'}
-        </small>
       </label>
     </div>
   )
@@ -158,14 +159,14 @@ export function DatePlanner({ siteId, lat, lon, landing, onPick, horizon }) {
     <div className="panel" id="planner-panel">
       <div className="panel-head">
         <h2>Landing date planner</h2>
-        <p>
-          Each column is a landing day; color shows how much of the following {WIN} days have Sun, Earth or both in view.
-          Click a day to load it. Best day in range for power + comms:{' '}
+        <Info>Each column is a landing day; colour shows how much of the following {WIN} days have Sun, Earth or both in view. Click a day to load it.</Info>
+        <span className="best-day small">
+          Best day:{' '}
           <button className="link" onClick={() => onPick(new Date(planStart.getTime() + best.d * DAY))}>
             {new Date(planStart.getTime() + best.d * DAY).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}
             {' '}({Math.round(best.both)}%)
           </button>
-        </p>
+        </span>
       </div>
       <div className="heat">
         {[['sun', 'Sunlight'], ['earth', 'Earth'], ['both', 'Both']].map(([k, label]) => (
@@ -242,7 +243,7 @@ export function Compare({ scenarios, onRemove, onLoad, onAdd }) {
     <div className="panel" id="compare-panel">
       <div className="panel-head">
         <h2>Scenario comparison</h2>
-        <p>Pin site + date combinations to compare them side by side. Values are at landing time; percentages cover the first 14 days.</p>
+        <Info>Pin site + date combinations to compare them side by side. Values are at landing time; percentages cover the first 14 days.</Info>
         <div className="tools">
           <button className="primary" onClick={onAdd}>+ Pin current scenario</button>
           {scenarios.length > 0 && <button className="no-print" onClick={exportCsv}>Export CSV</button>}
@@ -323,19 +324,26 @@ export function TerrainPanel({ siteId, lat, lon, info, state, localPrecise, onQu
   if (siteId !== 'custom') {
     return (
       <div className="panel terrain" id="terrain-panel">
-        <h3>Terrain</h3>
-        <p className="muted small">
-          {info
-            ? `Full-resolution LOLA horizon, precomputed (${info.resolutionM} m/px near the site). Surface ${info.elevationM.toLocaleString('en-US')} m.`
-            : 'Loading terrain…'}
-        </p>
+        <div className="terrain-head">
+          <h3>Terrain</h3>
+          <span className="muted small">{info ? `LOLA · ${info.resolutionM} m/px` : 'loading…'}</span>
+          <Info label="About the terrain">Full-resolution horizon from NASA's LOLA laser altimeter, precomputed for this site and ray-traced 300 km in every direction.</Info>
+        </div>
       </div>
     )
   }
   const busy = ['loading', 'computing', 'downloading', 'precise'].includes(state.status)
   return (
     <div className="panel terrain" id="terrain-panel">
-      <h3>Terrain</h3>
+      <div className="terrain-head">
+        <h3>Terrain</h3>
+        <Info label="About the terrain">
+          {info?.mode === 'quick' && !busy && <>Quick mode, computed in your browser. Accuracy {quickAccuracy(lat)}. </>}
+          {localPrecise
+            ? 'Precise mode uses full-resolution NASA LOLA maps (80 m near the pole); the first run downloads them.'
+            : 'The downloaded version of the app computes terrain from full-resolution NASA maps (80 m) with one click.'}
+        </Info>
+      </div>
       {state.status === 'error' && <p className="warn small" role="alert">Terrain failed: {state.error}</p>}
       <div className={`terrain-status ${busy ? 'loading' : info ? info.mode : 'idle'}`}>
         {state.status === 'loading' && <>Downloading map tiles… {state.done}/{state.total} ({(state.bytes / 1e6).toFixed(1)} MB)</>}
@@ -350,9 +358,6 @@ export function TerrainPanel({ siteId, lat, lon, info, state, localPrecise, onQu
           </>
         )}
       </div>
-      {info?.mode === 'quick' && !busy && (
-        <p className="muted small">Quick mode, computed in your browser. Accuracy {quickAccuracy(lat)}.</p>
-      )}
       <div className="terrain-actions">
         {localPrecise ? (
           <button className="primary" disabled={busy || info?.mode === 'precise'} onClick={onPrecise}>
@@ -365,11 +370,6 @@ export function TerrainPanel({ siteId, lat, lon, info, state, localPrecise, onQu
         )}
         {info?.mode === 'precise' && <button disabled={busy} onClick={onQuick}>Back to quick</button>}
       </div>
-      {!localPrecise && (
-        <p className="muted small">
-          The downloaded version computes terrain from full-resolution NASA maps (80 m) with one click.
-        </p>
-      )}
     </div>
   )
 }
