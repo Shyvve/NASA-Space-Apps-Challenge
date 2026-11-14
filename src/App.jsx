@@ -15,6 +15,7 @@ import { IllumMap } from './components/IllumMap.jsx'
 import { PowerPanel, powerSeries } from './components/Power.jsx'
 import { Scene3D } from './components/Scene3D.jsx'
 import { Tour } from './components/Tour.jsx'
+import { CompareModal, CompareTray, MAX_COMPARE } from './components/SiteCompare.jsx'
 
 const DAYS = 30
 const STEP_MIN = 30
@@ -66,6 +67,9 @@ export default function App() {
   const [toast, setToast] = useState(null)
   const [powerCfg, setPowerCfg] = useState(DEFAULT_POWER)
   const [relayId, setRelayId] = useState(initial.relay ?? 'none')
+  // Shop-style comparison: the user adds any two places, then opens a side-by-side view.
+  const [compareList, setCompareList] = useState([])
+  const [compareOpen, setCompareOpen] = useState(false)
   const w = (expert, simple) => (learn ? simple : expert)
 
   // ---- Terrain for custom coordinates: quick (browser tiles) or precise (local version, full-resolution DEMs) ----
@@ -189,6 +193,20 @@ export default function App() {
     chooseLanding(s.landing)
   }
   const label = site ? site.name : 'Custom site'
+  const compareKey = `${siteId}:${coords.lat.toFixed(5)},${coords.lon.toFixed(5)}`
+  const inCompare = compareList.some((x) => x.key === compareKey)
+  const toggleCompare = () => {
+    if (inCompare) return setCompareList((l) => l.filter((x) => x.key !== compareKey))
+    if (compareList.length >= MAX_COMPARE) return
+    const entry = {
+      key: compareKey, siteId, lat: coords.lat, lon: coords.lon, note: site?.note,
+      label: site ? site.name : `Point ${coords.lat.toFixed(2)}°, ${coords.lon.toFixed(2)}°E`,
+      terrain: siteId === 'custom' ? terrainForSite : null,
+    }
+    const next = [...compareList, entry]
+    setCompareList(next)
+    if (next.length === MAX_COMPARE) flash('Two places selected: press Compare at the bottom')
+  }
 
   const resetAll = () => {
     terrainRun.current++
@@ -200,6 +218,8 @@ export default function App() {
     setMask(0)
     setPlaying(false)
     setScenarios([])
+    setCompareList([])
+    setCompareOpen(false)
     setRelayId('none')
     setPowerCfg(DEFAULT_POWER)
     setCustomTerrain(null)
@@ -243,7 +263,7 @@ export default function App() {
   }
 
   const TABS = [
-    ['3d', '3D'], ['comms', 'Comms'], ['power', 'Power'], ['dates', 'Dates'], ['light', 'Light'], ['compare', `Compare${scenarios.length ? ` ${scenarios.length}` : ''}`], ['about', 'About'],
+    ['3d', '3D'], ['comms', 'Comms'], ['power', 'Power'], ['dates', 'Dates'], ['light', 'Light'], ['compare', `Saved${scenarios.length ? ` ${scenarios.length}` : ''}`], ['about', 'About'],
   ]
 
   return (
@@ -298,6 +318,11 @@ export default function App() {
               <span className="site-name">{label}</span>
               <span className="mono muted">{coords.lat.toFixed(4)}°, {coords.lon.toFixed(4)}°E{horizon.info ? ` · ${horizon.info.elevationM.toLocaleString('en-US')} m` : ''}</span>
               {site && <span className="muted small">{site.note}</span>}
+              <button className={`cmp-add ${inCompare ? 'on' : ''}`} onClick={toggleCompare}
+                disabled={!inCompare && compareList.length >= MAX_COMPARE}
+                title={!inCompare && compareList.length >= MAX_COMPARE ? 'Two places already selected: remove one in the bar below' : ''}>
+                {inCompare ? '✓ In compare' : '⚖ Add to compare'}
+              </button>
             </div>
 
             <MetricCards m={m} source={series.sources.includes('horizons') ? 'horizons' : 'engine'} />
@@ -373,6 +398,17 @@ export default function App() {
           </section>
         </main>
         <Tour open={tour} onClose={() => setTour(false)} />
+        <CompareTray items={compareList} onRemove={(k) => setCompareList((l) => l.filter((x) => x.key !== k))}
+          onClear={() => setCompareList([])} onOpen={() => setCompareOpen(true)} />
+        {compareOpen && compareList.length === MAX_COMPARE && (
+          <CompareModal items={compareList} landing={landing} powerCfg={powerCfg} relayId={relayId}
+            onClose={() => setCompareOpen(false)}
+            onOpenSite={(e) => {
+              setCompareOpen(false)
+              if (e.siteId !== 'custom') chooseSite(e.siteId)
+              else { if (e.terrain) setCustomTerrain(e.terrain); setCustomCoords(e.lat, e.lon) }
+            }} />
+        )}
         <Assistant context={assistantContext} />
         {toast && <div className="toast" role="status">{toast}</div>}
       </div>

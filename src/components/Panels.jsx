@@ -242,7 +242,7 @@ export function Compare({ scenarios, onRemove, onLoad, onAdd }) {
   return (
     <div className="panel" id="compare-panel">
       <div className="panel-head">
-        <h2>Scenario comparison</h2>
+        <h2>Saved scenarios</h2>
         <Info>Pin site + date combinations to compare them side by side. Values are at landing time; percentages cover the first 14 days.</Info>
         <div className="tools">
           <button className="primary" onClick={onAdd}>+ Pin current scenario</button>

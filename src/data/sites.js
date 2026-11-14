@@ -26,6 +26,8 @@ export const SITES = [
   // South pole
   { id: 'shackleton', name: 'Shackleton rim', group: 'South pole', lat: -89.6965, lon: -161.571, note: 'Best-lit LOLA point within 1.5 km of rim Point A (Bussey et al. 2010)' },
   { id: 'connecting-ridge', name: 'Connecting Ridge', group: 'South pole', lat: -89.45, lon: -137.31, note: 'Shackleton–de Gerlache ridge, most-illuminated point (Gläser et al. 2014)' },
+  { id: 'shackleton-floor', name: 'Shackleton crater floor', group: 'Craters (permanent shadow)', lat: -89.67, lon: 129.78, note: 'Bottom of Shackleton crater, ~4 km below the rim; permanently shadowed, water-ice candidate' },
+  { id: 'haworth-floor', name: 'Haworth crater floor', group: 'Craters (permanent shadow)', lat: -87.45, lon: -5.0, note: 'Bottom of Haworth crater, permanently shadowed region' },
   { id: 'malapert', name: 'Malapert Massif', group: 'Artemis III regions (approx.)', lat: -85.99, lon: 1.987, note: 'Best-lit LOLA point near the massif summit; Artemis III candidate region' },
   { id: 'nobile', name: 'Nobile Rim', group: 'Artemis III regions (approx.)', lat: -85.234, lon: 36.598, note: 'Best-lit LOLA point on Nobile rim; Artemis III candidate region' },
 ]

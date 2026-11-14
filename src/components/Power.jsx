@@ -29,7 +29,7 @@ export function powerSeries(series, clr, cfg) {
 }
 
 /** Battery needed to keep `load` running from a full start: the largest energy drawdown (Wh). */
-function batteryNeed(p, load, stepH) {
+export function batteryNeed(p, load, stepH) {
   let level = 0, top = 0, worst = 0
   for (const w of p) {
     level += (w - load) * stepH
